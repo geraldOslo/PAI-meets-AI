@@ -1,0 +1,48 @@
+# Ignore checkpoint directories
+/model_checkpoints/
+/model_checkpoints/*
+**/model/**
+
+# Ignore local settings and file paths
+/code/training/config.py
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Model checkpoints and logs
+model_checkpoints/
+logs/
+*.pth
+*.ckpt
+*.pt
+
+# Temporary files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test outputs
+test*/
+
+# Ignore images in the web app uploade
+/code/PAI-web-app/uploads/*
+.Rproj.user
