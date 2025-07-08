@@ -31,18 +31,18 @@ The codebase also integrates explainable AI (XAI) methods, primarily multi-layer
    cd pai-meets-ai
    ```
 2. Create and activate a Python environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate # Linux/macOS
-venv\Scripts\activate # Windows
-```
+   ```bash
+   python -m venv venv
+   source venv/bin/activate # Linux/macOS
+   venv\Scripts\activate # Windows
+   ```
 3. Install required packages:
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 4. **Download model checkpoints:**
-- Model checkpoints must be downloaded from: https://huggingface.co/geraldOslo/pai-meets-ai
-- After downloading, copy the checkpoint files into the folder: `code/inference/model`
+   - Model checkpoints must be downloaded from: https://huggingface.co/geraldOslo/pai-meets-ai
+   - After downloading, copy the checkpoint files into the folder: `code/inference/model`
 ---
 
 ## Configuration
@@ -67,6 +67,7 @@ pip install -r requirements.txt
 - These statistics should be transferred into `config.py` for consistent preprocessing during training.
 
 **Note:**  
+
 If you are generating new datasets, refer to the method described by Jordal et al.[2] and use the [EndodonticMeasurements ImageJ plugin](https://github.com/geraldOslo/EndodonticMeasurements) [3] for standardized ROI extraction and measurement.
 ---
 
