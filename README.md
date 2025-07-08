@@ -40,6 +40,9 @@ venv\Scripts\activate # Windows
 ```bash
 pip install -r requirements.txt
 ```
+4. **Download model checkpoints:**
+- Model checkpoints must be downloaded from: https://huggingface.co/geraldOslo/pai-meets-ai
+- After downloading, copy the checkpoint files into the folder: `code/inference/model`
 ---
 
 ## Configuration
@@ -63,6 +66,8 @@ pip install -r requirements.txt
 - Calculate image pixel mean and standard deviation for normalization.
 - These statistics should be transferred into `config.py` for consistent preprocessing during training.
 
+**Note:**  
+If you are generating new datasets, refer to the method described by Jordal et al.[2] and use the [EndodonticMeasurements ImageJ plugin](https://github.com/geraldOslo/EndodonticMeasurements) [3] for standardized ROI extraction and measurement.
 ---
 
 ## Training
@@ -84,16 +89,29 @@ pip install -r requirements.txt
 
 ## Inference & Explainability
 
-- Use `code/inference/PAIinference.py` or the notebook `code/inference/Inference-MultiLayerXAI.ipynb` to:
-- Run batch inference on new image clips.
-- Generate per-sample PAI predictions and class probabilities.
-- Produce Grad-CAM and related heatmaps for explainability.
-- The inference pipeline supports:
-- Automatic device detection (CPU/GPU).
-- TIFF and standard image formats.
-- Adjustable pixel size parameters for consistent ROI extraction.
-- Multi-threaded processing for responsiveness.
-- Visualizations include individual sample heatmaps and population-average attention maps.
+There are two main approaches for inference and explainability:
+
+### 1. Batch Inference Notebook
+
+- **Notebook:** `code/inference/Inference-MultiLayerXAI.ipynb`
+- **Purpose:** Batch processing of all images in a folder. This notebook was used for testing the model on the test set.
+- **Features:**
+- Runs inference on multiple images in a directory.
+- Outputs PAI predictions and class probabilities for each image.
+- Generates Grad-CAM and related heatmaps for explainability.
+- Supports population-level and per-class attention map visualization.
+
+### 2. Interactive GUI for Single Images
+
+- **Script:** `code/inference/PAIinference.py`
+- **Purpose:** Interactive Python program with GUI for single-image analysis.
+- **Features:**
+- Load a single image file.
+- Click on one of the apexes to select the region of interest for analysis.
+- Run PAI prediction on the selected region.
+- Optionally visualize CAM (Class Activation Map) for the prediction.
+- Displays the probability distribution of PAI scores graphically.
+- Supports TIFF and standard image formats, automatic device detection (CPU/GPU), and adjustable pixel size for ROI extraction.
 
 ---
 
@@ -142,6 +160,7 @@ pai-meets-ai/
 
 ## References
 [1] 1. Ørstavik D, Kerekes K, Eriksen HM. The periapical index: A scoring system for radiographic assessment of apical periodontitis. Dental Traumatology. 1986 Feb;2(1):20–34. 
-
+[2] 2. Jordal, K., Skudutyte-Rysstad, R., Sen, A., Torgersen, G., Ørstavik, D., & Sunde, P. T. (2021). Effects of an individualized training course on technical quality and periapical status of teeth treated endodontically by dentists in the Public Dental Service in Norway. An observational intervention study. *International Endodontic Journal*. https://doi.org/10.1111/iej.13669
+[3] 3. EndodonticMeasurements ImageJ plugin: https://github.com/geraldOslo/EndodonticMeasurements
 
 ---
