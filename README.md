@@ -136,6 +136,7 @@ pai-meets-ai/
 │ ├── tools/
 │ │ ├── analyzeruns.py # Run summary and analysis utilities
 │ │ └── AnalyzeDataset.ipynb # Dataset analysis notebook
+| ├── dataset_extraction/ # Scripts to convert scored images to anonymized training clips
 ├── requirements.txt # Python dependencies
 ├── LICENSE # MIT License
 └── README.md # This file
