@@ -162,8 +162,10 @@ pai-meets-ai/
 ---
 
 ## References
-[1] 1. Ørstavik D, Kerekes K, Eriksen HM. The periapical index: A scoring system for radiographic assessment of apical periodontitis. Dental Traumatology. 1986 Feb;2(1):20–34. 
+[1] 1. Ørstavik D, Kerekes K, Eriksen HM. The periapical index: A scoring system for radiographic assessment of apical periodontitis. Dental Traumatology. 1986 Feb;2(1):20–34.
+
 [2] 2. Jordal, K., Skudutyte-Rysstad, R., Sen, A., Torgersen, G., Ørstavik, D., & Sunde, P. T. (2021). Effects of an individualized training course on technical quality and periapical status of teeth treated endodontically by dentists in the Public Dental Service in Norway. An observational intervention study. *International Endodontic Journal*. https://doi.org/10.1111/iej.13669
+
 [3] 3. EndodonticMeasurements ImageJ plugin: https://github.com/geraldOslo/EndodonticMeasurements
 
 ---
