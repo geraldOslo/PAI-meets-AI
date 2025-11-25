@@ -1,0 +1,100 @@
+# =============================================================================
+# PAI-meets-AI-2 Requirements
+# Deep Learning for Periapical Index Classification
+#
+# Author: Gerald Torgersen
+# Institution: University of Oslo, Faculty of Dentistry
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Gerald Torgersen
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core Deep Learning Framework
+# -----------------------------------------------------------------------------
+# IMPORTANT: Install PyTorch with CUDA support first using:
+# pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+#
+# The versions below match the exact environment used in published experiments
+torch==2.7.1
+torchvision==0.22.1
+
+# PyTorch dependencies (automatically installed with torch, listed for completeness)
+# nvidia-cuda-runtime-cu12==12.6.77
+# nvidia-cudnn-cu12==9.5.1.17
+# triton==3.3.1
+
+# -----------------------------------------------------------------------------
+# Model Architectures and Computer Vision
+# -----------------------------------------------------------------------------
+timm>=0.9.0                # PyTorch Image Models (ResNet50, EfficientNet, ConvNeXt)
+opencv-python>=4.8.0       # Required for GradCAM visualization (cv2)
+
+# -----------------------------------------------------------------------------
+# Data Processing and Analysis
+# -----------------------------------------------------------------------------
+numpy==2.3.1               # Exact version used in experiments
+pandas>=1.5.0              # DataFrame operations, CSV handling
+scikit-learn>=1.3.0        # Metrics (QWK, accuracy, F1, confusion matrix)
+
+# -----------------------------------------------------------------------------
+# Image Processing
+# -----------------------------------------------------------------------------
+Pillow==11.3.0             # PIL, image loading (exact version from experiments)
+tifffile>=2023.0.0         # TIFF file support for medical images
+
+# -----------------------------------------------------------------------------
+# Visualization
+# -----------------------------------------------------------------------------
+matplotlib==3.10.3         # Plotting, training curves (exact version)
+seaborn>=0.12.0            # Enhanced statistical visualizations
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+tqdm==4.67.1               # Progress bars (exact version from experiments)
+
+# -----------------------------------------------------------------------------
+# Optional: Development and Testing
+# -----------------------------------------------------------------------------
+# Uncomment if needed for development:
+# pytest>=7.4.0            # Unit testing
+# black>=23.0.0            # Code formatting
+# flake8>=6.0.0            # Linting
+
+# -----------------------------------------------------------------------------
+# Installation Instructions
+# -----------------------------------------------------------------------------
+# 1. Create virtual environment:
+#    python -m venv venv
+#    source venv/bin/activate  # Linux/Mac
+#    venv\Scripts\activate     # Windows
+#
+# 2. Install PyTorch with CUDA (REQUIRED FIRST):
+#    pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+#
+# 3. Install remaining dependencies:
+#    pip install -r requirements.txt
+#
+# 4. Create config file:
+#    cp code/config_example.py code/config.py
+#    # Edit code/config.py with your paths
+#
+# 5. Calculate dataset statistics:
+#    python code/data_utils/calculate_dataset_statistics.py
+#    # Update mean/std in code/config.py with output values
+#
+# -----------------------------------------------------------------------------
+# Hardware Requirements
+# -----------------------------------------------------------------------------
+# Training: NVIDIA GPU with ≥16 GB VRAM (tested on RTX 3090 24GB)
+# Inference: NVIDIA GPU with ≥8 GB VRAM or CPU (slower)
+# CUDA: 12.6 (cu126)
+# System RAM: 16 GB recommended
+#
+# Batch sizes optimized for 24GB VRAM:
+# - ResNet50: 128
+# - EfficientNet-B3: 64
+# - ConvNeXt-Tiny: 96
+#
+# For GPUs with less memory, reduce batch sizes proportionally in config.py
+# =============================================================================

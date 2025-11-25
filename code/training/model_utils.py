@@ -1,191 +1,350 @@
-# model_utils.py
 """
-Utilities for building and configuring deep learning models for PAI classification.
-
-This module focuses on the neural network architecture, enabling:
--   Creation of various pre-trained models (e.g., EfficientNet family) using the `timm` library.
--   Flexible configuration of dropout and drop path rates.
--   Advanced parameter freezing strategies (e.g., fine-tuning only the classifier,
-    or the classifier plus a specified number of top-most backbone blocks).
+Model utilities for PAI classification
 
 Author: Gerald Torgersen
 SPDX-License-Identifier: MIT
-Copyright (c) 2025 Gerald Torgersen, UiO
-Contact: https://www.odont.uio.no/iko/english/people/aca/gerald/
+Copyright (c) 2025 Gerald Torgersen
 """
 
-# Standard Library Imports
-import os
-import sys
-
-# Third-party Library Imports
 import torch
 import torch.nn as nn
-import timm # PyTorch Image Models library
+import timm
+from typing import Optional, List
+from config import ModelConfig
 
-# Type Hinting Imports
-from typing import Optional, List, Tuple
 
-# ============================================================================
-# Constants (for colored terminal output)
-# ============================================================================
-# Define ANSI escape codes for colored console output to improve log readability.
-COLOR_RED = "\033[91m"
-COLOR_YELLOW = "\033[93m"
-COLOR_GREEN = "\033[92m"
-COLOR_BLUE = "\033[94m"
-COLOR_RESET = "\033[0m"
-
-# ============================================================================
-# Model Building Function
-# ============================================================================
-
-def get_model(model_name: str = 'efficientnet_b3', # Changed default to efficientnet_b3 as per notebook context
-              num_classes: int = 5,
-              pretrained: bool = True,
-              dropout_rate: float = 0.5, # Adjusted default based on common practice for EffNet-B3 fine-tuning
-              drop_path_rate: float = 0.2,
-              finetune_blocks: int = -1) -> Tuple[nn.Module, List[str]]:
+def create_model(
+    model_config: ModelConfig,
+    pretrained: bool = True,
+    checkpoint_path: Optional[str] = None
+) -> nn.Module:
     """
-    Builds a deep learning model using the `timm` library, with configurable
-    pretrained weights, output classes, dropout, and stochastic depth.
-    It also applies a flexible parameter freezing strategy.
-
-    Parameters
-    ----------
-    model_name : str, optional
-        The name of the model architecture to load from `timm`
-        (e.g., 'efficientnet_b3', 'efficientnet_v2_s', 'resnet50').
-        Defaults to 'efficientnet_b3'.
-    num_classes : int, optional
-        The number of output classes for the final classification layer.
-        For PAI, typically 5 (0-indexed). Defaults to 5.
-    pretrained : bool, optional
-        If True, loads ImageNet pre-trained weights. Defaults to True.
-    dropout_rate : float, optional
-        The dropout rate applied to the final classification head (between 0 and 1).
-        Defaults to 0.5.
-    drop_path_rate : float, optional
-        The stochastic depth `drop_path` rate for the backbone layers (between 0 and 1).
-        Defaults to 0.2.
-    finetune_blocks : int, optional
-        Controls which parameters are trainable:
-        -   `-1`: All model parameters are set to trainable (standard fine-tuning).
-        -   `0`: Only the final classification head (classifier layer) is trainable;
-            all backbone parameters are frozen.
-        -   `>0`: The final classification head and the last `N` (`finetune_blocks`)
-            sequential blocks of the backbone are trainable; other backbone layers are frozen.
-        Defaults to -1.
-
-    Returns
-    -------
-    Tuple[torch.nn.Module, List[str]]
-        A tuple containing:
-        - model (torch.nn.Module): The constructed and potentially partially-frozen PyTorch model.
-        - fast_backbone_param_names (List[str]): A list of full parameter names (e.g., 'blocks.5.conv')
-                                                 that were explicitly unfrozen as part of the
-                                                 `finetune_blocks > 0` strategy. These are intended
-                                                 for the 'fast' learning rate group in the optimizer.
-
-    Raises
-    ------
-    Exception
-        If there is an error creating the model using `timm` (e.g., invalid model name,
-        network issues for pretrained weights).
+    Create model from configuration.
+    
+    Args:
+        model_config: Model configuration
+        pretrained: Whether to use pretrained weights
+        checkpoint_path: Path to checkpoint to load (optional)
+    
+    Returns:
+        Model instance
     """
-    print(f"--- Building Model: '{model_name}' ---")
-    print(f"  Num Classes       : {num_classes}")
-    print(f"  Pretrained        : {pretrained}")
-    print(f"  Dropout Rate      : {dropout_rate}")
-    print(f"  Drop Path Rate    : {drop_path_rate}")
-    print(f"  Finetune Blocks   : {finetune_blocks} (-1: all, 0: classifier only, >0: classifier + last N blocks)")
-    print("-----------------------------------")
-
-    fast_backbone_param_names: List[str] = [] # Collect names of parameters in the 'fast' group
-
-    try:
-        # Create the model using timm.create_model.
-        # timm automatically handles adapting the classifier head (`num_classes`)
-        # and applying global dropout (`drop_rate`) and stochastic depth (`drop_path_rate`).
-        model = timm.create_model(
-            model_name,
-            pretrained=pretrained,
-            num_classes=num_classes,
-            drop_rate=dropout_rate,
-            drop_path_rate=drop_path_rate
-        )
-
-        # --- Parameter Freezing Logic ---
-        if finetune_blocks == -1:
-            # If -1, all parameters are trainable (this is timm's default behavior)
-            print(f"All model parameters (`finetune_blocks`={finetune_blocks}) are set to trainable.")
-            # Ensure all parameters are explicitly marked as requiring grad, in case a pretrained model defaults differently
-            for param in model.parameters():
-                param.requires_grad = True
+    # Create model using timm
+    model = timm.create_model(
+        model_config.timm_name,
+        pretrained=pretrained,
+        num_classes=model_config.num_classes,
+        drop_rate=model_config.dropout,
+        drop_path_rate=model_config.drop_path
+    )
+    
+    # Load checkpoint if provided
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
         else:
-            # If `finetune_blocks` is 0 or positive, first freeze all parameters
-            print(f"Initiating parameter freezing based on `finetune_blocks`={finetune_blocks}...")
-            for param in model.parameters():
+            model.load_state_dict(checkpoint)
+    
+    return model
+
+
+def get_model_info(model: nn.Module) -> dict:
+    """
+    Get information about model architecture.
+    
+    Args:
+        model: PyTorch model
+    
+    Returns:
+        Dictionary with model information
+    """
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    return {
+        'total_params': total_params,
+        'trainable_params': trainable_params,
+        'total_params_millions': total_params / 1e6,
+        'trainable_params_millions': trainable_params / 1e6
+    }
+
+
+def freeze_layers(model: nn.Module, freeze_until: Optional[str] = None):
+    """
+    Freeze model layers up to a certain point.
+    
+    Args:
+        model: PyTorch model
+        freeze_until: Name of layer to freeze up to (None = freeze all)
+    """
+    freeze_all = freeze_until is None
+    
+    for name, param in model.named_parameters():
+        if freeze_all or freeze_until not in name:
+            param.requires_grad = False
+        else:
+            break
+
+
+def unfreeze_layers(model: nn.Module):
+    """Unfreeze all model layers."""
+    for param in model.parameters():
+        param.requires_grad = True
+
+
+def get_layer_groups(model: nn.Module, model_type: str) -> List[nn.Module]:
+    """
+    Get layer groups for discriminative learning rates.
+    
+    Args:
+        model: PyTorch model
+        model_type: Type of model ('resnet', 'efficientnet', 'convnext')
+    
+    Returns:
+        List of layer groups
+    """
+    if 'resnet' in model_type.lower():
+        return [
+            model.conv1,
+            model.layer1,
+            model.layer2,
+            model.layer3,
+            model.layer4,
+            model.fc
+        ]
+    elif 'efficientnet' in model_type.lower():
+        return [
+            model.conv_stem,
+            *model.blocks[:3],
+            *model.blocks[3:6],
+            *model.blocks[6:],
+            model.classifier
+        ]
+    elif 'convnext' in model_type.lower():
+        return [
+            model.stem,
+            model.stages[0],
+            model.stages[1],
+            model.stages[2],
+            model.stages[3],
+            model.head
+        ]
+    else:
+        # Default: return model as single group
+        return [model]
+
+
+def get_gradcam_target_layer(model: nn.Module, model_type: str) -> nn.Module:
+    """
+    Get target layer for GradCAM visualization.
+    
+    Args:
+        model: PyTorch model
+        model_type: Type of model ('resnet', 'efficientnet', 'convnext')
+    
+    Returns:
+        Target layer for GradCAM
+    """
+    if 'resnet' in model_type.lower():
+        return model.layer4[-1]
+    elif 'efficientnet' in model_type.lower():
+        return model.blocks[-1]
+    elif 'convnext' in model_type.lower():
+        return model.stages[-1]
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+
+def count_parameters_by_layer(model: nn.Module) -> dict:
+    """
+    Count parameters in each layer.
+    
+    Args:
+        model: PyTorch model
+    
+    Returns:
+        Dictionary mapping layer names to parameter counts
+    """
+    param_counts = {}
+    
+    for name, module in model.named_modules():
+        if len(list(module.children())) == 0:  # Leaf module
+            params = sum(p.numel() for p in module.parameters())
+            if params > 0:
+                param_counts[name] = params
+    
+    return param_counts
+
+
+def model_surgery(
+    model: nn.Module,
+    num_classes: int,
+    freeze_backbone: bool = False
+) -> nn.Module:
+    """
+    Modify model for transfer learning.
+    
+    Args:
+        model: Pretrained model
+        num_classes: Number of output classes
+        freeze_backbone: Whether to freeze backbone layers
+    
+    Returns:
+        Modified model
+    """
+    # Identify classifier layer
+    if hasattr(model, 'fc'):
+        # ResNet-style
+        in_features = model.fc.in_features
+        model.fc = nn.Linear(in_features, num_classes)
+    elif hasattr(model, 'classifier'):
+        # EfficientNet-style
+        in_features = model.classifier.in_features
+        model.classifier = nn.Linear(in_features, num_classes)
+    elif hasattr(model, 'head'):
+        # ConvNeXt-style
+        if isinstance(model.head, nn.Sequential):
+            in_features = model.head[-1].in_features
+            model.head[-1] = nn.Linear(in_features, num_classes)
+        else:
+            in_features = model.head.in_features
+            model.head = nn.Linear(in_features, num_classes)
+    else:
+        raise ValueError("Could not identify classifier layer")
+    
+    # Freeze backbone if requested
+    if freeze_backbone:
+        for name, param in model.named_parameters():
+            # Don't freeze classifier
+            if 'fc' not in name and 'classifier' not in name and 'head' not in name:
                 param.requires_grad = False
+    
+    return model
 
-            # --- Unfreeze Classifier Head ---
-            # Iterate through common classifier attribute names to find and unfreeze the head
-            classifier_unfrozen = False
-            for head_name in ['classifier', 'fc', 'head']: # Common names for classifier layers
-                if hasattr(model, head_name) and isinstance(getattr(model, head_name), nn.Module):
-                    # Unfreeze all parameters within the identified classifier module
-                    for param in getattr(model, head_name).parameters():
-                        param.requires_grad = True
-                    print(f"  {COLOR_GREEN}Classifier layer '{head_name}' (final classification head) unfrozen.{COLOR_RESET}")
-                    classifier_unfrozen = True
-                    break
-            if not classifier_unfrozen:
-                print(f"  {COLOR_YELLOW}Warning: Could not automatically find a common classifier layer name ('classifier', 'fc', 'head') to unfreeze. Ensure your model's head is being fine-tuned.{COLOR_RESET}")
 
-            # --- Unfreeze Specific Backbone Blocks (if finetune_blocks > 0) ---
-            if finetune_blocks > 0:
-                block_layer_name: Optional[str] = None
-                # Identify the attribute name for the main sequential blocks (common in EfficientNets)
-                if hasattr(model, 'blocks'):
-                    block_layer_name = 'blocks'
-                # Add more conditions here for other model families if needed (e.g., 'layer4' for ResNets)
-                # elif hasattr(model, 'layer4'): block_layer_name = 'layer4' # Example for ResNet's last block
+class ModelEMA:
+    """
+    Exponential Moving Average of model parameters.
+    
+    Maintains a shadow copy of model weights that are updated as:
+        shadow_weights = decay * shadow_weights + (1 - decay) * model_weights
+    
+    Often improves generalization and stability.
+    
+    Args:
+        model: Model to track
+        decay: EMA decay rate (typically 0.999 or 0.9999)
+    """
+    
+    def __init__(self, model: nn.Module, decay: float = 0.999):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+        
+        # Initialize shadow weights
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+    
+    def update(self):
+        """Update shadow weights with current model weights."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (1.0 - self.decay) * param.data + self.decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+    
+    def apply_shadow(self):
+        """Apply shadow weights to model."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.backup[name] = param.data
+                param.data = self.shadow[name]
+    
+    def restore(self):
+        """Restore original model weights."""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
 
-                if block_layer_name and isinstance(getattr(model, block_layer_name), nn.Sequential):
-                    all_blocks = getattr(model, block_layer_name)
-                    total_blocks = len(all_blocks)
-                    # Determine the actual number of blocks to unfreeze, clamped by total available blocks
-                    num_to_unfreeze = min(finetune_blocks, total_blocks)
 
-                    if num_to_unfreeze > 0:
-                        print(f"  Unfreezing last {num_to_unfreeze} blocks in '{block_layer_name}' (total blocks: {total_blocks})...")
-                        # Iterate backwards from the end to unfreeze the last N blocks
-                        for i in range(total_blocks - num_to_unfreeze, total_blocks):
-                            # Recursively set requires_grad for all sub-parameters in this block
-                            for name, param in all_blocks[i].named_parameters():
-                                param.requires_grad = True
-                                # Collect the full name of these unfrozen parameters for the fast LR group
-                                fast_backbone_param_names.append(f"{block_layer_name}.{i}.{name}")
-                            print(f"    - Block {i} (index {i}) unfrozen and parameters collected for fast LR group.")
-                    else:
-                        print(f"  No backbone blocks unfrozen. Only the classifier is trainable as `finetune_blocks` is {finetune_blocks} or too small compared to total blocks.")
+def load_checkpoint(
+    checkpoint_path: str,
+    model: nn.Module,
+    optimizer: Optional[torch.optim.Optimizer] = None,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None
+) -> dict:
+    """
+    Load checkpoint with model, optimizer, and scheduler states.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        model: Model to load weights into
+        optimizer: Optimizer to load state into (optional)
+        scheduler: Scheduler to load state into (optional)
+    
+    Returns:
+        Dictionary with checkpoint metadata
+    """
+    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    
+    # Load model state
+    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Load optimizer state
+    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    # Load scheduler state
+    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    
+    # Return metadata
+    metadata = {
+        'epoch': checkpoint.get('epoch', 0),
+        'best_metric': checkpoint.get('best_qwk', checkpoint.get('best_metric', 0)),
+        'metrics': checkpoint.get('metrics', {})
+    }
+    
+    return metadata
 
-                elif finetune_blocks > 0:
-                    print(f"  {COLOR_YELLOW}Warning: `finetune_blocks` is > 0, but a standard sequential block structure (`blocks` or similar) was not found in the model. Backbone blocks could not be selectively unfrozen.{COLOR_RESET}")
-            else:
-                print("  No backbone blocks will be unfrozen (`finetune_blocks` is 0). Only the classifier head is trainable.")
 
-        # Log total trainable parameters for confirmation
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        total_params = sum(p.numel() for p in model.parameters())
-        if total_params > 0:
-             print(f"Total trainable parameters in model: {trainable_params:,} ({100 * trainable_params / total_params:.2f}% of total).")
-        else:
-             print(f"{COLOR_YELLOW}Warning: Model contains 0 total parameters. This might indicate an issue.{COLOR_RESET}")
-
-        return model, fast_backbone_param_names
-
-    except Exception as e:
-        print(f"{COLOR_RED}Error creating model '{model_name}' with timm: {e}{COLOR_RESET}")
-        print("Please check the `model_name` and ensure `timm` is installed and functioning correctly.")
-        raise # Re-raise the error for upstream handling (e.g., by the main training script)
+def save_checkpoint(
+    checkpoint_path: str,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
+    epoch: int,
+    metrics: dict,
+    best_metric: float
+):
+    """
+    Save checkpoint with model, optimizer, and scheduler states.
+    
+    Args:
+        checkpoint_path: Path to save checkpoint
+        model: Model to save
+        optimizer: Optimizer to save
+        scheduler: Scheduler to save (optional)
+        epoch: Current epoch
+        metrics: Dictionary of metrics
+        best_metric: Best metric value so far
+    """
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'best_metric': best_metric,
+        'best_qwk': best_metric,  # Legacy key
+        'metrics': metrics
+    }
+    
+    if scheduler is not None:
+        checkpoint['scheduler_state_dict'] = scheduler.state_dict()
+    
+    torch.save(checkpoint, checkpoint_path)

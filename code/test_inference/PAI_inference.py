@@ -15,7 +15,8 @@
 *
 * Features:
 * - Support for new checkpoint format with automatic model configuration loading
-* - Pre-trained EfficientNet-B3 model for PAI classification using timm library
+* - Multi-architecture support: ResNet50, EfficientNet-B3, ConvNeXt-Tiny
+* - Automatic detection of optimal input size per architecture (224x224 or 300x300)
 * - Support for TIFF and standard image formats
 * - Grad-CAM visualization for explainable AI
 * - Adjustable pixel size for different image resolutions
@@ -24,10 +25,11 @@
 * - Automatic CPU/GPU detection and optimization
 *
 * Usage:
-* 1. Place your model checkpoint in a subdirectory named 'model' relative to the script
-*    (The expected path is './model/your_checkpoint.pth')
-* 2. Run the application
-* 3. Load a dental radiograph
+* 1. Run the application
+* 2. Click "Load Model" button and select a model checkpoint (.pth file)
+*    OR specify checkpoint path via command-line: --checkpoint path/to/model.pth
+*    OR place checkpoint in './model/' subdirectory for auto-detection
+* 3. Click "Load Image" and select a dental radiograph
 * 4. Set the correct pixel size in mm (typically 0.03-0.05mm for dental radiographs)
 * 5. Click on a point of interest in the image
 * 6. View the PAI classification results and Grad-CAM visualizations
@@ -48,8 +50,9 @@
 * - Tkinter for GUI
 *
 * Model Details:
-* - Architecture: EfficientNet-B3 (fine-tuned, loaded via timm)
-* - Input size: 300×300 pixels (12×12 mm at reference pixel size of 0.04mm)
+* - Architectures: ResNet50, EfficientNet-B3, or ConvNeXt-Tiny (loaded via timm)
+* - Input size: Auto-detected (224×224 for ResNet/ConvNeXt, 300×300 for EfficientNet)
+* - Region size: 12×12 mm at reference pixel size of 0.04mm
 * - Output: 5 classes (PAI 1-5)
 * - Model configuration automatically loaded from checkpoint
 *
@@ -106,6 +109,7 @@ import tkinter as tk
 from tkinter import filedialog, Button, Label, Frame, ttk, Checkbutton, IntVar, DoubleVar, Entry, messagebox
 import threading
 import queue
+import argparse
 
 # Default normalization constants (will be updated from checkpoint if available)
 DEFAULT_MEAN = [0.3784975, 0.3784975, 0.3784975]
@@ -152,19 +156,85 @@ def find_model_checkpoint(model_dir):
     
     return None
 
+def get_model_input_size(model_name):
+    """
+    Get the optimal input size for a given model architecture.
+
+    Args:
+        model_name: Name of the model (e.g., 'efficientnet_b3', 'resnet50')
+
+    Returns:
+        Input size in pixels (int)
+    """
+    model_name_lower = model_name.lower()
+
+    if 'efficientnet' in model_name_lower:
+        return 300  # EfficientNet-B3 uses 300x300
+    elif 'resnet' in model_name_lower:
+        return 224  # ResNet50 uses 224x224
+    elif 'convnext' in model_name_lower:
+        return 224  # ConvNeXt-Tiny uses 224x224
+    else:
+        # Default to 224 for unknown architectures
+        print(f"Warning: Unknown architecture '{model_name}', defaulting to 224x224")
+        return 224
+
+def infer_model_from_filename(checkpoint_path):
+    """
+    Infer model architecture from checkpoint filename.
+
+    Args:
+        checkpoint_path: Path to checkpoint file
+
+    Returns:
+        Dictionary with model configuration or None if cannot infer
+    """
+    filename = os.path.basename(checkpoint_path).lower()
+
+    # Model mappings based on common naming patterns
+    if 'efficientnet-b3' in filename or 'efficientnet_b3' in filename or 'effnet' in filename:
+        return {
+            'model_name': 'efficientnet_b3',
+            'timm_name': 'efficientnet_b3',
+            'input_size': 300,
+            'dropout_rate': 0.5,
+            'drop_path_rate': 0.2,
+            'num_classes': 5
+        }
+    elif 'resnet50' in filename or 'resnet_50' in filename or 'resnet' in filename:
+        return {
+            'model_name': 'resnet50',
+            'timm_name': 'resnet50',
+            'input_size': 224,
+            'dropout_rate': 0.5,
+            'drop_path_rate': 0.1,
+            'num_classes': 5
+        }
+    elif 'convnext' in filename:
+        return {
+            'model_name': 'convnext_tiny',
+            'timm_name': 'convnext_tiny',
+            'input_size': 224,
+            'dropout_rate': 0.5,
+            'drop_path_rate': 0.2,
+            'num_classes': 5
+        }
+
+    return None
+
 def load_model_from_checkpoint(checkpoint_path, device):
     """
-    Load model from the new checkpoint format with automatic configuration.
-    
+    Load model from checkpoint with support for both new and old formats.
+
     Args:
         checkpoint_path: Path to the checkpoint file
         device: Device to load the model on
-        
+
     Returns:
-        Tuple of (model, normalization_mean, normalization_std, target_layer)
+        Tuple of (model, normalization_mean, normalization_std, target_layer, input_size, model_config)
     """
     print(f"Loading checkpoint from: {checkpoint_path}")
-    
+
     # Load checkpoint
     try:
         checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -172,12 +242,31 @@ def load_model_from_checkpoint(checkpoint_path, device):
     except Exception as e:
         raise RuntimeError(f"Error loading checkpoint file: {e}")
 
-    # Extract model configuration
+    # Try to extract model configuration from checkpoint
     model_config = checkpoint.get('model_config', {})
-    if not model_config:
-        raise ValueError("No model_config found in checkpoint. This appears to be an old format checkpoint.")
-    
-    print("Found model configuration:")
+
+    # If no model_config found, this is an old format checkpoint (state_dict only)
+    is_old_format = not model_config
+
+    if is_old_format:
+        print("Old format checkpoint detected (state_dict only)")
+        print("Attempting to infer model architecture from filename...")
+
+        # Try to infer from filename
+        inferred_config = infer_model_from_filename(checkpoint_path)
+
+        if not inferred_config:
+            raise ValueError(
+                f"Cannot automatically determine model architecture from filename: {os.path.basename(checkpoint_path)}\n"
+                f"Please ensure the checkpoint filename contains one of: 'resnet50', 'efficientnet_b3', or 'convnext'"
+            )
+
+        model_config = inferred_config
+        print(f"Inferred model architecture: {model_config['model_name']}")
+    else:
+        print("New format checkpoint detected (with metadata)")
+
+    print("Model configuration:")
     print(f"  Model name: {model_config.get('model_name')}")
     print(f"  Num classes: {model_config.get('num_classes')}")
     print(f"  Dropout rate: {model_config.get('dropout_rate')}")
@@ -211,12 +300,19 @@ def load_model_from_checkpoint(checkpoint_path, device):
     # Load model weights
     print("Loading model weights...")
     try:
-        model_state_dict = checkpoint.get('model_state_dict', checkpoint)
-        if isinstance(model_state_dict, dict) and 'state_dict' in model_state_dict:
-            model_state_dict = model_state_dict['state_dict']
+        # Handle different checkpoint formats
+        if is_old_format:
+            # Old format: checkpoint IS the state_dict
+            model_state_dict = checkpoint
+            print("  Using checkpoint as state_dict (old format)")
+        else:
+            # New format: checkpoint contains model_state_dict key
+            model_state_dict = checkpoint.get('model_state_dict', checkpoint)
+            if isinstance(model_state_dict, dict) and 'state_dict' in model_state_dict:
+                model_state_dict = model_state_dict['state_dict']
 
         # Handle DataParallel prefix if present
-        if list(model_state_dict.keys())[0].startswith('module.'):
+        if model_state_dict and list(model_state_dict.keys())[0].startswith('module.'):
             print("  Removing 'module.' prefix from state_dict keys")
             model_state_dict = {k[len('module.'):]: v for k, v in model_state_dict.items()}
 
@@ -277,9 +373,13 @@ def load_model_from_checkpoint(checkpoint_path, device):
     norm_params = checkpoint.get('normalization', {})
     mean = norm_params.get('mean', DEFAULT_MEAN)
     std = norm_params.get('std', DEFAULT_STD)
-    
+
     print(f"Using normalization - Mean: {mean}, Std: {std}")
-    
+
+    # Determine optimal input size for this architecture
+    input_size = get_model_input_size(model_name)
+    print(f"Using input size: {input_size}x{input_size} pixels")
+
     # Print checkpoint info if available
     if 'epoch' in checkpoint:
         print(f"Checkpoint info: Epoch {checkpoint['epoch']}")
@@ -287,8 +387,8 @@ def load_model_from_checkpoint(checkpoint_path, device):
         print(f"Best validation metric: {checkpoint['best_metric_val']}")
     if 'timestamp' in checkpoint:
         print(f"Training timestamp: {checkpoint['timestamp']}")
-    
-    return model, mean, std, target_layer
+
+    return model, mean, std, target_layer, input_size, model_config
 
 class XRayAnalyzerApp:
     """
@@ -296,97 +396,147 @@ class XRayAnalyzerApp:
     Handles the GUI, image processing, and model inference with the new checkpoint format.
     """
     
-    def __init__(self, root):
+    def __init__(self, root, checkpoint_path=None):
         """
         Initialize the application.
-        
+
         Args:
             root: The tkinter root window
+            checkpoint_path: Optional path to specific checkpoint file
         """
         self.root = root
-        self.root.title("Dental X-Ray PAI Analyzer v2.0")
+        self.root.title("Dental X-Ray PAI Analyzer v2.0 (Multi-Architecture)")
+        self.checkpoint_path = checkpoint_path
         self.root.geometry("1200x800")
-        
+
         # Application state
         self.device = device
         self.status_queue = queue.Queue()
         self.analysis_running = False
-        
+
         # Model and normalization parameters (loaded from checkpoint)
         self.model = None
+        self.model_name = None  # Store model name for display
         self.mean = DEFAULT_MEAN
         self.std = DEFAULT_STD
         self.target_layer = None
-        
+        self.input_size = 300  # Default, will be updated from checkpoint
+
         # Image variables
         self.image_path = None
         self.original_image = None
         self.display_image = None
         self.current_point = None
-        
+
         # Analysis options
         self.show_gradcam = IntVar(value=1)  # Default to showing Grad-CAM
-        
+
         # Pixel size settings - crucial for accurate physical measurements
         self.reference_pixel_size = 0.04  # mm - reference pixel size for model training
         self.image_pixel_size = DoubleVar(value=self.reference_pixel_size)
-        
+
         # GUI setup
         self.setup_gui()
-        
+
         # Start status update timer
         self.check_status_queue()
+
+        # Only auto-load model if checkpoint path was provided via command-line
+        if checkpoint_path:
+            self.status_label.config(text="Loading model... Please wait.")
+            self.loading_thread = threading.Thread(target=self.load_model_thread)
+            self.loading_thread.daemon = True
+            self.loading_thread.start()
+        else:
+            self.status_label.config(text="Ready! Load a model to begin.")
         
-        # Start loading model in background
-        self.status_label.config(text="Loading model... Please wait.")
-        self.loading_thread = threading.Thread(target=self.load_model_thread)
-        self.loading_thread.daemon = True
-        self.loading_thread.start()
-        
+    def load_model_dialog(self):
+        """Open file dialog to select model checkpoint."""
+        # Open file dialog
+        file_path = filedialog.askopenfilename(
+            title="Select Model Checkpoint",
+            filetypes=[
+                ("PyTorch checkpoints", "*.pth"),
+                ("All files", "*.*")
+            ]
+        )
+
+        if file_path:
+            # Update checkpoint path
+            self.checkpoint_path = file_path
+
+            # Disable load model button during loading
+            self.load_model_btn.config(state=tk.DISABLED)
+            self.status_label.config(text="Loading model... Please wait.")
+
+            # Start loading model in background
+            loading_thread = threading.Thread(target=self.load_model_thread)
+            loading_thread.daemon = True
+            loading_thread.start()
+
     def load_model_thread(self):
         """Load model in background thread to keep UI responsive."""
         try:
-            # Look for checkpoint in 'model' subdirectory
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            model_dir = os.path.join(script_dir, 'model')
-            
-            self.status_queue.put("Searching for model checkpoint...")
-            
-            # Find checkpoint file
-            checkpoint_path = find_model_checkpoint(model_dir)
-            
-            if not checkpoint_path:
-                raise FileNotFoundError(f"No .pth checkpoint files found in {model_dir}")
-            
-            self.status_queue.put(f"Found checkpoint: {os.path.basename(checkpoint_path)}")
-            
+            # Determine checkpoint path
+            if self.checkpoint_path and os.path.exists(self.checkpoint_path):
+                # Use specified checkpoint path
+                checkpoint_path = self.checkpoint_path
+                self.status_queue.put(f"Using checkpoint: {os.path.basename(checkpoint_path)}")
+            else:
+                # Look for checkpoint in 'model' subdirectory
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                model_dir = os.path.join(script_dir, 'model')
+
+                self.status_queue.put("Searching for model checkpoint...")
+
+                # Find checkpoint file
+                checkpoint_path = find_model_checkpoint(model_dir)
+
+                if not checkpoint_path:
+                    raise FileNotFoundError(f"No .pth checkpoint files found in {model_dir}")
+
+                self.status_queue.put(f"Found checkpoint: {os.path.basename(checkpoint_path)}")
+
             # Load model using new checkpoint format
             self.status_queue.put("Loading model architecture and weights...")
-            model, mean, std, target_layer = load_model_from_checkpoint(checkpoint_path, self.device)
-            
+            model, mean, std, target_layer, input_size, model_config = load_model_from_checkpoint(checkpoint_path, self.device)
+
             # Store model and parameters
             self.model = model
+            self.model_name = model_config.get('model_name', 'Unknown')
             self.mean = mean
             self.std = std
             self.target_layer = target_layer
-            
+            self.input_size = input_size
+
             self.status_queue.put("Model loaded successfully!")
-            
+
             # Enable UI elements in the main thread
             self.root.after(0, self.enable_ui_after_loading)
-            
+
         except Exception as e:
             error_msg = f"Error loading model: {str(e)}"
             print(error_msg)
             traceback.print_exc()
             self.status_queue.put(error_msg)
-            
+
+            # Re-enable load model button on error
+            self.root.after(0, lambda: self.load_model_btn.config(state=tk.NORMAL))
+
             # Show error dialog in main thread
             self.root.after(0, lambda: messagebox.showerror("Model Loading Error", error_msg))
     
     def enable_ui_after_loading(self):
         """Enable UI elements after model loading completes."""
-        self.load_btn.config(state=tk.NORMAL)
+        self.load_image_btn.config(state=tk.NORMAL)
+        self.load_model_btn.config(state=tk.NORMAL)
+
+        # Update model info display
+        if self.model_name:
+            model_display = self.model_name.replace('_', ' ').title()
+            self.model_info_label.config(text=f"Model: {model_display} ({self.input_size}×{self.input_size})",
+                                        fg="darkgreen")
+
         self.status_label.config(text="Ready! Load an image and click on an apex to analyze.")
     
     def check_status_queue(self):
@@ -423,23 +573,28 @@ class XRayAnalyzerApp:
         """Set up the control panel."""
         self.controls_frame = Frame(self.left_frame)
         self.controls_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
-        
+
         # Top row of controls
         top_controls = Frame(self.controls_frame)
         top_controls.pack(fill=tk.X, pady=(0, 5))
-        
+
+        # Load model button
+        self.load_model_btn = Button(top_controls, text="Load Model", command=self.load_model_dialog,
+                                     font=("Arial", 10, "bold"), bg="lightblue")
+        self.load_model_btn.pack(side=tk.LEFT, padx=5)
+
         # Load image button - initially disabled until model loads
-        self.load_btn = Button(top_controls, text="Load Image", command=self.load_image, 
-                              state=tk.DISABLED, font=("Arial", 10, "bold"))
-        self.load_btn.pack(side=tk.LEFT, padx=5)
-        
+        self.load_image_btn = Button(top_controls, text="Load Image", command=self.load_image,
+                                     state=tk.DISABLED, font=("Arial", 10, "bold"))
+        self.load_image_btn.pack(side=tk.LEFT, padx=5)
+
         # Grad-CAM visualization toggle
-        self.gradcam_check = Checkbutton(top_controls, text="Show Grad-CAM", 
+        self.gradcam_check = Checkbutton(top_controls, text="Show Grad-CAM",
                                         variable=self.show_gradcam, font=("Arial", 10))
         self.gradcam_check.pack(side=tk.LEFT, padx=10)
-        
+
         # Quit button
-        self.quit_btn = Button(top_controls, text="Quit", command=self.root.quit, 
+        self.quit_btn = Button(top_controls, text="Quit", command=self.root.quit,
                               font=("Arial", 10))
         self.quit_btn.pack(side=tk.RIGHT, padx=5)
         
@@ -458,6 +613,11 @@ class XRayAnalyzerApp:
         help_text = "Typical range: 0.03-0.05mm"
         Label(bottom_controls, text=help_text, font=("Arial", 8), fg="gray").pack(side=tk.LEFT, padx=5)
         
+        # Model info label (will be updated when model loads)
+        self.model_info_label = Label(bottom_controls, text="No model loaded",
+                                      font=("Arial", 9, "bold"), fg="darkred")
+        self.model_info_label.pack(side=tk.LEFT, padx=15)
+
         # Device info
         device_info = f"Device: {self.device.type.upper()}"
         if self.device.type == 'cuda':
@@ -627,7 +787,7 @@ class XRayAnalyzerApp:
         self.progress_bar.pack(fill=tk.X, padx=5, pady=5)
         self.progress_bar.start(10)
         self.status_label.config(text="Analyzing region... Please wait.")
-        self.load_btn.config(state=tk.DISABLED)
+        self.load_image_btn.config(state=tk.DISABLED)
         
         # Start analysis thread
         analysis_thread = threading.Thread(target=self.run_analysis)
@@ -644,7 +804,7 @@ class XRayAnalyzerApp:
             # Preprocess region
             self.status_queue.put("Preprocessing image...")
             preprocess = transforms.Compose([
-                transforms.Resize((300, 300)),
+                transforms.Resize((self.input_size, self.input_size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=self.mean, std=self.std),
             ])
@@ -683,17 +843,20 @@ class XRayAnalyzerApp:
             self.status_queue.put(error_msg)
             self.root.after(0, self.reset_analysis_ui)
     
-    def extract_region(self, center_x, center_y, target_size=300):
+    def extract_region(self, center_x, center_y, target_size=None):
         """
         Extract a 12×12 mm region with consistent physical dimensions.
-        
+
         Args:
             center_x, center_y: Center coordinates in pixels
-            target_size: Target output size for the model (300x300)
-            
+            target_size: Target output size for the model (default: use self.input_size)
+
         Returns:
             PIL Image of the extracted region, properly padded and sized
         """
+        # Use model-specific input size if not specified
+        if target_size is None:
+            target_size = self.input_size
         # Get image dimensions
         img_width, img_height = self.original_image.size
         
@@ -853,40 +1016,46 @@ class XRayAnalyzerApp:
         self.analysis_running = False
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
-        self.load_btn.config(state=tk.NORMAL)
+        self.load_image_btn.config(state=tk.NORMAL)
     
     def get_gradcam(self, class_idx, input_tensor):
         """
         Generate Grad-CAM visualization for a specific class.
-        
+
         Args:
             class_idx: Class index (0-4 for PAI 1-5)
             input_tensor: Preprocessed input tensor
-            
+
         Returns:
             Normalized heatmap as numpy array
         """
         if self.target_layer is None:
             # Return empty heatmap if no target layer
-            return np.zeros((300, 300), dtype=np.float32)
+            return np.zeros((self.input_size, self.input_size), dtype=np.float32)
         
         self.model.eval()
 
         # Hooks for capturing activations and gradients
         activations = []
         gradients = []
-        
+
         def forward_hook(module, input, output):
-            activations.append(output)
+            # Clone output to avoid in-place operation issues
+            activations.append(output.clone() if isinstance(output, torch.Tensor) else output)
 
         def backward_hook(module, grad_input, grad_output):
-            gradients.append(grad_output[0])
+            # Clone gradient to avoid in-place operation issues
+            if grad_output[0] is not None:
+                gradients.append(grad_output[0].clone())
 
         # Register hooks
         handle_forward = self.target_layer.register_forward_hook(forward_hook)
         handle_backward = self.target_layer.register_full_backward_hook(backward_hook)
 
         try:
+            # Enable gradients for this operation
+            input_tensor.requires_grad_(True)
+
             # Forward pass
             output = self.model(input_tensor)
 
@@ -895,9 +1064,13 @@ class XRayAnalyzerApp:
 
             # Backward pass for specified class
             target = output[0, class_idx]
-            target.backward()
+            target.backward(retain_graph=False)
 
             # Get gradients and activations
+            if not gradients:
+                # If no gradients captured, return empty heatmap
+                return np.zeros((self.input_size, self.input_size), dtype=np.float32)
+
             grads = gradients[0].cpu().data.numpy()
             acts = activations[0].cpu().data.numpy()
 
@@ -914,14 +1087,22 @@ class XRayAnalyzerApp:
             grad_cam = self.normalize_heatmap(grad_cam)
 
             # Resize to input size
-            grad_cam = cv2.resize(grad_cam, (300, 300))
+            grad_cam = cv2.resize(grad_cam, (self.input_size, self.input_size))
 
             return grad_cam
+
+        except Exception as e:
+            print(f"Error in GradCAM computation: {e}")
+            # Return empty heatmap on error
+            return np.zeros((self.input_size, self.input_size), dtype=np.float32)
 
         finally:
             # Always clean up hooks
             handle_forward.remove()
             handle_backward.remove()
+            # Clear gradients
+            if input_tensor.grad is not None:
+                input_tensor.grad.zero_()
     
     def normalize_heatmap(self, heatmap):
         """Normalize heatmap to range 0-1."""
@@ -939,16 +1120,42 @@ class XRayAnalyzerApp:
 
 def main():
     """Main application entry point."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Dental X-Ray PAI Analyzer - Multi-Architecture Support",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use default model in ./model/ subdirectory
+  python PAI_inference.py
+
+  # Specify checkpoint for ResNet50
+  python PAI_inference.py --checkpoint model_checkpoints/p5_resnet_alpha_0_5_20251028_113346/resnet50_best.pth
+
+  # Specify checkpoint for EfficientNet-B3
+  python PAI_inference.py --checkpoint model_checkpoints/effnet_exp5_lower_lr_20251025_235232/efficientnet-b3_best.pth
+
+  # Specify checkpoint for ConvNeXt-Tiny
+  python PAI_inference.py --checkpoint model_checkpoints/convnext_exp2_moderate_settings_20251026_061225/convnext-tiny_best.pth
+        """
+    )
+    parser.add_argument(
+        '--checkpoint',
+        type=str,
+        help='Path to model checkpoint file (.pth)'
+    )
+    args = parser.parse_args()
+
     try:
         # Check for required libraries
         if not TIMM_AVAILABLE:
             print("ERROR: Required library 'timm' not found.")
             print("Please install it using: pip install timm")
             return
-        
+
         # Create and run application
         root = tk.Tk()
-        app = XRayAnalyzerApp(root)
+        app = XRayAnalyzerApp(root, checkpoint_path=args.checkpoint)
         
         # Set minimum window size
         root.minsize(1000, 600)

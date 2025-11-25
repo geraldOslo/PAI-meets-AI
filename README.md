@@ -1,171 +1,425 @@
-# PAI-meets-AI
+# PAI-meets-AI-2: Deep Learning for Periapical Index Classification
 
-Open-source codebase for training, inference, and explainability of deep learning models for Periapical Index (PAI) [1] scoring from intraoral radiograph clips.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Deep learning system for automated classification of dental radiographs using the Periapical Index (PAI) scale. This project implements a systematic hyperparameter search framework comparing CNN architectures (ResNet50, EfficientNet-B3, ConvNeXt-Tiny) for assessing periapical periodontitis severity.
+
+**Institution**: University of Oslo, Faculty of Dentistry
+**Author**: Gerald Torgersen
+**Year**: 2025
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
+- [Project Structure](#project-structure)
+- [Citation](#citation)
 
 ---
 
 ## Overview
 
-This repository contains the full code and utilities to train, validate, and run inference with deep learning models that classify periapical lesions on dental radiographs according to the PAI scoring system (scores 1–5). The focus is on 300×300 pixel image clips centered on tooth apices, with human-annotated PAI labels.
+### Clinical Background
 
-The codebase also integrates explainable AI (XAI) methods, primarily multi-layer Grad-CAM variants, to visualize and interpret model decisions.
+The **Periapical Index (PAI)** is a 5-point ordinal scale for assessing periapical bone changes in dental radiographs:
+
+| Score | Description | Clinical Status |
+|-------|-------------|-----------------|
+| PAI 1 | Normal periapical structures | Healthy |
+| PAI 2 | Small changes in bone structure | Healthy |
+| PAI 3 | Changes with mineral loss | **Pathological** |
+| PAI 4 | Well-defined radiolucent area | **Pathological** |
+| PAI 5 | Severe with exacerbating features | **Pathological** |
+
+**Primary Metric**: Quadratic Weighted Kappa (QWK) - accounts for ordinal nature and severity of misclassifications.
+
+### Model Architectures
+
+| Model | Parameters | Input Size | Batch Size | Strength |
+|-------|------------|------------|------------|----------|
+| **ResNet50** | ~25M | 224×224 | 128 | Medical imaging standard, fast training |
+| **EfficientNet-B3** | ~12M | 300×300 | 64 | Parameter efficient, captures fine details |
+| **ConvNeXt-Tiny** | ~28M | 224×224 | 96 | State-of-the-art, stable training |
+
+All models use ImageNet pretraining and are optimized for A100 40GB GPUs.
 
 ---
 
-## Contents
+## Key Features
 
-- **Training pipeline**: Data loading, augmentation, model definition, training loops, checkpointing, and evaluation.
-- **Inference pipeline**: Batch inference on new datasets, probability outputs, and Grad-CAM visualizations.
-- **Data preparation utilities**: Scripts and notebooks for dataset metadata analysis, image statistics calculation, and data splitting.
-- **Visualization tools**: Plotting training curves, Grad-CAM heatmaps, and summarizing results.
-- **Configuration management**: Centralized hyperparameter and path configuration via `config.py`.
-- **Requirements**: `requirements.txt` specifying all Python dependencies for reproducibility.
+- ✅ **Three CNN architectures** with systematic comparison
+- ✅ **Three-phase hyperparameter search protocol** for research
+- ✅ **Comprehensive result tracking** (CSV with all metrics + hyperparameters)
+- ✅ **Class imbalance handling** (weighted sampling, focal loss)
+- ✅ **Model interpretability** (GradCAM++ visualization)
+- ✅ **HPC ready** (Slurm scripts for cluster training)
+- ✅ **Automated normalization** and data preprocessing
+- ✅ **Early stopping** with configurable patience
+- ✅ **Multiple metrics** (QWK, Accuracy, F1, MAE, per-class sensitivity)
 
 ---
 
 ## Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/geraldoslo/pai-meets-ai.git
-   cd pai-meets-ai
-   ```
-2. Create and activate a Python environment (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate # Linux/macOS
-   venv\Scripts\activate # Windows
-   ```
-3. Install required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. **Download model checkpoints:**
-   - Model checkpoints must be downloaded from: https://huggingface.co/geraldOslo/pai-meets-ai
-   - After downloading, copy the checkpoint files into the folder: `code/inference/model`
----
+### Requirements
 
-## Configuration
+- Python 3.11+
+- CUDA 12.1+
+- GPU with 20GB+ VRAM
+- 16GB+ system RAM
 
-- Copy `code/training/configtemplate.py` to `code/training/config.py`.
-- Edit `config.py` to specify:
-- Paths to your dataset CSV files and image root directories.
-- Training hyperparameters (batch size, learning rates, epochs, etc.).
-- Data augmentation settings.
-- Model architecture and fine-tuning parameters.
-- Normalization statistics (mean and std) for your image data.
-- The configuration file centralizes all adjustable parameters for easy experimentation.
+### Setup
 
----
+```bash
+# Clone repository
+git clone https://github.com/yourusername/PAI-meets-AI-2.git
+cd PAI-meets-AI-2
 
-## Data Preparation
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-- Use the provided notebook `code/tools/AnalyzeDataset.ipynb` to:
-- Load and analyze dataset metadata CSVs.
-- Compute class distributions and identify potential data issues.
-- Calculate image pixel mean and standard deviation for normalization.
-- These statistics should be transferred into `config.py` for consistent preprocessing during training.
+# Install dependencies
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install timm pandas scikit-learn matplotlib tqdm pillow tifffile grad-cam
 
-**Note:**
+# Create config from template
+cp code/config_example.py code/config.py
+# Edit code/config.py with your paths (data_csv, data_root, output_dir)
+```
 
-If you are generating new datasets, refer to the method described by Jordal et al.[2] and use the [EndodonticMeasurements ImageJ plugin](https://github.com/geraldOslo/EndodonticMeasurements) [3] for standardized ROI extraction and measurement.
+### Calculate Dataset Statistics
+
+**IMPORTANT**: Must run before training!
+
+```bash
+cd code/data_utils
+python calculate_dataset_statistics.py
+# Update mean/std values in code/config.py with the output
+```
 
 ---
 
-## Training
+## Quick Start
 
-- The main training workflow is implemented in the Jupyter notebook `code/training/trainingpaimeetsai.ipynb`.
-- It imports modular utilities from:
-- `datautils.py` for dataset loading and augmentation.
-- `modelutils.py` for model creation and modification.
-- `trainutils.py` for training loops, loss functions, optimizers, schedulers, and checkpointing.
-- `visualizationutils.py` for plotting metrics and GPU usage.
-- Training supports:
-- Stratified train/validation split.
-- Oversampling to address class imbalance.
-- Mixed precision training (AMP).
-- Early stopping based on validation F1 score.
-- Checkpoints, training history, and summary YAML files are saved automatically.
+### 1. Single Model Training
+
+```bash
+# Train one model
+python code/training/train_simple.py --models resnet50 --epochs 50 --use_oversampling
+
+# Train all three models
+python code/training/train_simple.py \
+    --models resnet50 efficientnet_b3 convnext_tiny \
+    --epochs 50 --patience 15 --use_oversampling
+
+# View configuration
+python code/training/train_simple.py --print_config
+```
+
+### 2. Research Workflow (Three-Phase Protocol)
+
+For **systematic research** with publication-quality results:
+
+```bash
+# Phase 1: Baseline Exploration (15 experiments: 5 configs × 3 models)
+python code/hyperparam_search_phase1.py --submit
+python code/summarize_and_infer.py  # After completion
+
+# Phase 2: Focused Optimization (8 experiments on best model)
+# Update hyperparam_search_phase2.py based on Phase 1 results
+python code/hyperparam_search_phase2.py --submit
+python code/summarize_and_infer.py
+
+# Phase 3: Final Validation (5-8 experiments, statistical replicates)
+# Update hyperparam_search_phase3.py with Phase 2 best config
+python code/hyperparam_search_phase3.py --submit
+python code/summarize_and_infer.py
+```
+
+**Timeline**: 2 weeks (~30-40 GPU hours, parallelizable)
+
+
+### 3. Results Analysis
+
+```bash
+# Generate comprehensive CSV summary
+python code/summarize_and_infer.py --skip-inference --print-table
+
+# Output: experiments/hyperparam_search/hyperparameter_summary_TIMESTAMP.csv
+```
+
+The CSV contains:
+- Test metrics (QWK, accuracy, F1, per-class sensitivities)
+- Validation metrics (best val QWK)
+- All hyperparameters (LR, dropout, focal loss params, etc.)
+- Training metadata (epochs, duration)
 
 ---
 
-## Inference & Explainability
-
-There are two main approaches for inference and explainability:
-
-### 1. Batch Inference Notebook
-
-- **Notebook:** `code/inference/Inference-MultiLayerXAI.ipynb`
-- **Purpose:** Batch processing of all images in a folder. This notebook was used for testing the model on the test set.
-- **Features:**
-- Runs inference on multiple images in a directory.
-- Outputs PAI predictions and class probabilities for each image.
-- Generates Grad-CAM and related heatmaps for explainability.
-- Supports population-level and per-class attention map visualization.
-
-### 2. Interactive GUI for Single Images
-
-- **Script:** `code/inference/PAIinference.py`
-- **Purpose:** Interactive Python program with GUI for single-image analysis.
-- **Features:**
-- Load a single image file.
-- Click on one of the apexes to select the region of interest for analysis.
-- Run PAI prediction on the selected region.
-- Optionally visualize CAM (Class Activation Map) for the prediction.
-- Displays the probability distribution of PAI scores graphically.
-- Supports TIFF and standard image formats, automatic device detection (CPU/GPU), and adjustable pixel size for ROI extraction.
-
----
 
 ## Project Structure
-```text
-pai-meets-ai/
-├── code/
-│ ├── training/
-│ │ ├── configtemplate.py # Configuration template
-│ │ ├── datautils.py # Dataset and augmentation utilities
-│ │ ├── modelutils.py # Model loading and modification
-│ │ ├── trainutils.py # Training loop, loss, optimizer
-│ │ ├── visualizationutils.py # Plotting and visualization
-│ │ └── trainingpaimeetsai.ipynb # Training notebook
-│ ├── inference/
-│ │ ├── configinference.py # Inference-specific config
-│ │ ├── PAIinference.py # Inference script
-│ │ ├── inferenceutils.py # Inference helper functions
-│ │ └── Inference-MultiLayerXAI.ipynb # Inference + Grad-CAM notebook
-│ ├── tools/
-│ │ ├── analyzeruns.py # Run summary and analysis utilities
-│ │ └── AnalyzeDataset.ipynb # Dataset analysis notebook
-| ├── dataset_extraction/ # Scripts to convert scored images to anonymized training clips
-├── requirements.txt # Python dependencies
-├── LICENSE # MIT License
-└── README.md # This file
+
 ```
+PAI-meets-AI-2/
+├── code/
+│   ├── config.py                    # User config (create from config_example.py)
+│   ├── summarize_and_infer.py       # Result aggregation & CSV generation
+│   │
+│   ├── hyperparam_search_phase*.py  # Phase 1/2/3/4/5/6 experiment definitions
+│   │
+│   ├── training/
+│   │   ├── train_simple.py          # Main training script
+│   │   ├── data_utils.py            # Dataset, transforms
+│   │   ├── train_utils.py           # Loss functions (FocalLoss, etc.)
+│   │   ├── model_utils.py           # Model creation
+│   │   └── visualization_utils.py   # Plotting
+│   │
+│   ├── data_utils/
+│   │   ├── calculate_dataset_statistics.py  # ⚠️ Run this first!
+│   │
+│   ├── test_inference/
+│   │   ├── inference_gradcam.py              # Batch inference + GradCAM
+│   │   ├── multilayer_xai_analysis.py        # Multi-layer XAI
+│   │   └── PAI_inference.py                  # Interactive GUI
+│   │
+│   ├── utils/
+│   │   ├── diagnose_logs.py                  # Debug log parsing
+│   │   └── run_single_inference.py
+│   │
+│   └── slurm_scripts/
+│       ├── run_summary.sh                    # Slurm job for summarization
+│       ├── slurm_inference_*.sh              # Inference jobs
+│       └── logs/                             # Auto-generated job logs
+│
+├── experiments/
+│   ├── exp*_YYYYMMDD_HHMMSS/                # Phase 1 experiments (15)
+│   ├── *_exp*_YYYYMMDD_HHMMSS/              # Phase 2+ experiments
+│   │   ├── training.log                      # Complete log with structured hyperparams
+│   │   ├── MODEL_best.pth                    # Best checkpoint (by val QWK)
+│   │   ├── MODEL_history.json                # Training curves
+│   │   └── statistics_report.txt             # Test metrics
+│   │
+│   └── hyperparam_search/
+│       └── hyperparameter_summary_*.csv      # Aggregated results from all phases
+└── readme.md                                 # This file
+```
+
+### Key Design Patterns
+
+1. **Dataclass-Based Configuration**: All configs use Python dataclasses for type safety
+2. **Structured Logging**: Hyperparameters logged in parseable format for automated extraction
+3. **Flexible Dataset**: Supports multiple CSV formats with `filename` or `image_path` columns
+4. **Class Imbalance Handling**: Weighted oversampling + focal loss + class weights
+5. **Model Configs**: Pre-optimized settings per architecture (batch size, input size, dropout)
+
 ---
 
-## Reproducibility
+## Command Reference
 
-- The repository follows best practices for reproducibility in medical AI research:
-  - All code and pre-trained weights are openly available.
-  - Configuration files separate code from environment-specific settings.
-  - Data preprocessing and augmentation pipelines are fully documented.
-  - Training and inference scripts include logging and checkpointing.
-  - Environment dependencies are captured in `requirements.txt`.
+### Training
+
+```bash
+# Single model with defaults
+python code/training/train_simple.py --models resnet50 --epochs 50
+
+# Multiple models with oversampling
+python code/training/train_simple.py \
+    --models resnet50 efficientnet_b3 convnext_tiny \
+    --epochs 50 --patience 15 --use_oversampling
+
+# Custom hyperparameters
+python code/training/train_simple.py \
+    --models efficientnet_b3 \
+    --epochs 100 \
+    --base_lr 1e-4 --max_lr 1e-3 \
+    --weight_decay 1e-2 --dropout 0.6 \
+    --focal_gamma 3.0 --use_oversampling
+```
+
+### Hyperparameter Search (Three-Phase)
+
+```bash
+# Phase 1: Generate scripts (dry run)
+python code/hyperparam_search_phase1.py
+
+# Phase 1: Generate and submit jobs
+python code/hyperparam_search_phase1.py --submit
+
+# Monitor jobs
+squeue -u $USER
+tail -f code/slurm_scripts/logs/p1_*.out
+
+# Summarize results after completion
+python code/summarize_and_infer.py --skip-inference --print-table
+
+# Proceed to Phase 2 (update config based on Phase 1 first!)
+python code/hyperparam_search_phase2.py --submit
+```
+
+### Result Analysis
+
+```bash
+# Generate summary CSV
+python code/summarize_and_infer.py
+
+# Skip inference (faster, uses existing reports)
+python code/summarize_and_infer.py --skip-inference
+
+# Print to console
+python code/summarize_and_infer.py --print-table
+
+# Debug mode
+python code/summarize_and_infer.py --debug
+
+# Run via Slurm
+sbatch code/slurm_scripts/run_summary.sh
+```
+
+### Diagnostics
+
+```bash
+# Diagnose log parsing issues
+python code/utils/diagnose_logs.py experiments/
+
+# Test single image inference
+python code/utils/run_single_inference.py
+```
 
 ---
 
-## Contact & Contribution
+## Evaluation Metrics
 
-- For questions, issues, or contributions, please open an issue or pull request on the GitHub repository.
-- Contributions are welcome to improve code, add features, or enhance documentation.
+### Primary: Quadratic Weighted Kappa (QWK)
+- Accounts for ordinal nature of PAI scale
+- Weights disagreements by severity (PAI 1→5 is worse than PAI 2→3)
+- Range: -1 (complete disagreement) to 1 (perfect agreement)
+- Interpretation: >0.80 excellent, 0.70-0.80 good, 0.60-0.70 moderate
+
+### Secondary Metrics
+- **Accuracy**: Overall correctness
+- **F1-Score**: Weighted F1 for class imbalance
+- **MAE**: Mean absolute error (average class distance)
+- **Sensitivity/Specificity**: Per-class performance (PAI 1-5)
+- **Confusion Matrix**: Detailed misclassification patterns
 
 ---
 
-## References
-[1] 1. Ørstavik D, Kerekes K, Eriksen HM. The periapical index: A scoring system for radiographic assessment of apical periodontitis. Dental Traumatology. 1986 Feb;2(1):20–34.
+## FAQ
 
-[2] 2. Jordal, K., Skudutyte-Rysstad, R., Sen, A., Torgersen, G., Ørstavik, D., & Sunde, P. T. (2021). Effects of an individualized training course on technical quality and periapical status of teeth treated endodontically by dentists in the Public Dental Service in Norway. An observational intervention study. *International Endodontic Journal*. https://doi.org/10.1111/iej.13669
+**Q: Should I use the three-phase protocol or direct training?**
+A: For research/publication → three-phase protocol. For quick experiments → direct training with `train_simple.py`.
 
-[3] 3. EndodonticMeasurements ImageJ plugin: https://github.com/geraldOslo/EndodonticMeasurements
+**Q: How do I know which model is best?**
+A: Run Phase 1 (15 experiments). The summary CSV will rank all models by test QWK.
+
+**Q: Can I modify Phase 2/3 experiments?**
+A: Yes! That's the intended workflow. Edit `hyperparam_search_phase2.py` based on Phase 1 results.
+
+**Q: What if hyperparameters are missing from the summary CSV?**
+A: Run `python code/utils/diagnose_logs.py experiments/` to debug log parsing.
+
+**Q: How long does Phase 1 take?**
+A: ~12-15 GPU hours total. With cluster parallelization: ~2-3 hours wall time (all 15 jobs simultaneously).
+
+**Q: Out of memory errors?**
+A: Reduce batch size in `code/config.py` → `MODEL_CONFIGS` dict (e.g., 128→64 for ResNet50).
+
+**Q: Where are results saved?**
+A: Individual experiments → `experiments/exp_name/timestamp/`
+Summary CSV → `experiments/hyperparam_search/hyperparameter_summary_TIMESTAMP.csv`
 
 ---
+
+## Troubleshooting
+
+### Missing Hyperparameters in CSV
+```bash
+# Diagnose which hyperparameters aren't being extracted
+python code/utils/diagnose_logs.py experiments/
+
+# Check training.log has structured "HYPERPARAMETERS (for parsing)" section
+grep -A20 "HYPERPARAMETERS (for parsing)" experiments/exp1_*/training.log
+```
+
+### Jobs Stuck in PENDING
+```bash
+# Check why
+scontrol show job <job_id>
+
+# Common causes:
+# - Cluster queue full (wait)
+# - Requesting unavailable GPU type
+# - Time limit too high for partition
+```
+
+### Log Parsing Errors
+1. Verify `train_simple.py` has `print_hyperparameters_for_parsing()` function
+2. Ensure function is called at start of `train_model()`
+3. Check that training.log contains structured hyperparameter section
+
+### Out of Memory
+```python
+# Edit code/config.py
+MODEL_CONFIGS = {
+    'resnet50': ModelConfig(
+        batch_size=64,  # Reduced from 128
+        ...
+    )
+}
+```
+
+---
+
+## Citation
+
+```bibtex
+@misc{torgersen2025pai,
+  author = {Torgersen, Gerald},
+  title = {PAI-meets-AI-2: Deep Learning for Periapical Index Classification},
+  year = {2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/yourusername/PAI-meets-AI-2}},
+  institution = {University of Oslo, Faculty of Dentistry}
+}
+```
+
+### Key References
+
+1. **PAI System**: Ørstavik et al. (1986). "The periapical index: a scoring system for radiographic assessment."
+2. **ResNet**: He et al. (2016). "Deep residual learning for image recognition."
+3. **EfficientNet**: Tan & Le (2019). "EfficientNet: Rethinking model scaling."
+4. **ConvNeXt**: Liu et al. (2022). "A ConvNet for the 2020s."
+5. **Focal Loss**: Lin et al. (2017). "Focal loss for dense object detection."
+6. **GradCAM++**: Chattopadhay et al. (2018). "Grad-CAM++: Improved visual explanations."
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## Contact
+
+**Gerald Torgersen**
+University of Oslo, Faculty of Dentistry
+GitHub: [@geraldOslo](https://github.com/geraldOslo)
+
+---
+
+## Acknowledgments
+
+- **University of Oslo, Faculty of Dentistry** - Institutional support
+- **Norwegian Research Computing** - Computational resources (Fox HPC cluster)
+- **timm library** (Ross Wightman) - Pretrained models
+- **pytorch-grad-cam** (Jacob Gildenblat) - Visualization tools
