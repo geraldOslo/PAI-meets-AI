@@ -37,6 +37,8 @@ The **Periapical Index (PAI)** is a 5-point ordinal scale for assessing periapic
 | PAI 3 | Bone structural changes with some mineral loss characteristic of apical periodontitis | **Pathological** |
 | PAI 4 | Well defined radiolucency | **Pathological** |
 | PAI 5 | Radiolucency with radiating expansions of bone structural changes| **Pathological** |
+> **Reference:** Ørstavik, D. (1996) Time‐course and risk analyses of the development and healing of chronic apical periodontitis in man. *International Endodontic Journal*. [Online] 29 (3), 150–155. Available from: [Wiley Online Library](https://onlinelibrary.wiley.com/doi/10.1111/j.1365-2591.1996.tb01361.x) (Accessed 25 November 2025).
+
 
 **Primary Metric**: Quadratic Weighted Kappa (QWK) - accounts for ordinal nature and severity of misclassifications.
 
