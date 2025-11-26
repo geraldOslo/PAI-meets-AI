@@ -11,19 +11,6 @@ Deep learning system for automated classification of dental radiographs using th
 **Year**: 2025
 
 ---
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [Project Structure](#project-structure)
-- [Citation](#citation)
-
----
-
 ## Overview
 
 ### Clinical Background
