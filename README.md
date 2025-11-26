@@ -325,7 +325,24 @@ python code/utils/run_single_inference.py
 6. **GradCAM++**: Chattopadhay et al. (2018). "Grad-CAM++: Improved visual explanations."
 
 ---
+## ⚠️ Disclaimer & Limitations
 
+### 1. Research Use Only
+This software and the associated model weights are intended for **academic research and educational purposes only**. 
+*   It is **not** a certified Software as a Medical Device (SaMD) (e.g., FDA, MDR).
+*   It must **not** be used for primary clinical diagnosis, treatment planning, or decision-making on human patients.
+*   Any clinical application is the sole responsibility of the user and requires appropriate regulatory approval.
+
+### 2. Technical "As-Is" Provision
+This repository represents a research codebase that has evolved through multiple iterations of experimentation. While we aim for reproducibility:
+*   The code is provided **"as is"** without warranty of any kind.
+*   Users may encounter environment-specific issues or require minor modifications ("tweaks") to file paths, library versions, or hardware configurations to get the pipeline running on their local systems.
+*   We cannot guarantee that the code will run "out of the box" on every operating system or hardware setup.
+
+### 3. Liability
+The authors and the University of Oslo assume **no liability** for errors, misuse, or damages resulting from the use of this software or the pre-trained models. Use strictly at your own risk.
+
+---
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
