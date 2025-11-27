@@ -68,8 +68,8 @@ All models use ImageNet pretraining and are optimized for A100 40GB GPUs.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/PAI-meets-AI-2.git
-cd PAI-meets-AI-2
+git clone https://github.com/yourusername/PAI-meets-AI.git
+cd PAI-meets-AI
 
 # Create virtual environment
 python -m venv venv
@@ -157,7 +157,7 @@ The CSV contains:
 ## Project Structure
 
 ```
-PAI-meets-AI-2/
+PAI-meets-AI/
 ├── code/
 │   ├── config.py                    # User config (create from config_example.py)
 │   ├── summarize_and_infer.py       # Result aggregation & CSV generation
@@ -306,11 +306,11 @@ python code/utils/run_single_inference.py
 ```bibtex
 @misc{torgersen2025pai,
   author = {Torgersen, Gerald},
-  title = {PAI-meets-AI-2: Deep Learning for Periapical Index Classification},
+  title = {PAI-meets-AI: Deep Learning for Periapical Index Classification},
   year = {2025},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{https://github.com/yourusername/PAI-meets-AI-2}},
+  howpublished = {\url{https://github.com/yourusername/PAI-meets-AI}},
   institution = {University of Oslo, Faculty of Dentistry}
 }
 ```
