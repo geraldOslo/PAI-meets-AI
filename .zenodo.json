@@ -1,0 +1,58 @@
+{
+  "title": "PAI-meets-AI: Open-Weight Deep Learning Models for PAI Scoring",
+  "description": "Source code and pre-trained models for the study 'Open-Weight Deep Learning Models for PAI Scoring of Apical Periodontitis: Diagnostic Accuracy Study with Sensitivity, Specificity, and Area Under the Curve (AUC) on Intraoral Radiographs'. Contains an ensemble deep learning framework (ResNet50, EfficientNet-B3, ConvNeXt-Tiny) for automated assessment of apical periodontitis on intraoral radiographs.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Torgersen, Gerald",
+      "affiliation": "University of Oslo",
+      "orcid": "0000-0001-8335-7053"
+    },
+    {
+      "name": "Winsnes, Karianne",
+      "affiliation": "University of Oslo",
+      "orcid": "0009-0001-0791-2622"
+    },
+    {
+      "name": "Handal, Trude",
+      "affiliation": "University of Oslo",
+      "orcid": "0000-0002-3633-5887"
+    },
+    {
+      "name": "Diep, My Tien",
+      "affiliation": "University of Oslo",
+      "orcid": "0000-0002-4773-6651"
+    },
+    {
+      "name": "Ørstavik, Dag",
+      "affiliation": "University of Oslo",
+      "orcid": "0000-0003-0161-7857"
+    },
+    {
+      "name": "Sunde, Pia Titterud",
+      "affiliation": "University of Oslo",
+      "orcid": "0000-0002-6012-297X"
+    }
+  ],
+    "related_identifiers": [
+    {
+      "relation": "isSupplementedBy",
+      "identifier": "https://huggingface.co/geraldOslo/PAI-meets-AI",
+      "resource_type": "dataset"
+    }
+  ],
+  "keywords": [
+    "Periapical Periodontitis",
+    "Deep Learning",
+    "Artificial Intelligence",
+    "Neural Networks, Computer",
+    "Radiography, Dental",
+    "Image Interpretation, Computer-Assisted",
+    "Sensitivity and Specificity",
+    "Reproducibility of Results",
+    "Diagnosis, Computer-Assisted"
+  ],
+  "notes": "This software is for research purposes only and is not a certified medical device."
+}
