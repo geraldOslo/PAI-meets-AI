@@ -1,12 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=PAI_Repeated_Inference
-#SBATCH --account=ec192
 #SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=40G
-#SBATCH --partition=accel
 #SBATCH --gres=gpu:1
 #SBATCH --output=logs/inference_repeated_%j.out
 #SBATCH --error=logs/inference_repeated_%j.err
@@ -23,6 +21,7 @@
 #   3. ConvNeXt-Tiny
 #
 # Flags: --no-heatmaps (Output: CSV predictions and statistics report only)
+# Submit:  code/slurm_scripts/submit.sh code/slurm_scripts/slurm_inference_repeated.sh
 # ============================================================================
 
 echo "=================================================="
@@ -32,27 +31,12 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "=================================================="
 
-# Load modules
-echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
+# Modules, virtual environment and PYTHONPATH (from cluster.env); sets CODE_DIR
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh" || exit 1
 
-# Activate virtual environment
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
-echo "Activating virtual environment: $VENV_PATH"
-source $VENV_PATH/bin/activate
-
-# Set Project Root to where the job was submitted from
-PROJECT_ROOT="$SLURM_SUBMIT_DIR"
-
-# Set PYTHONPATH
-CODE_DIR="$PROJECT_ROOT/code"
-export PYTHONPATH="$CODE_DIR:$PYTHONPATH"
-echo "Setting PYTHONPATH to: $PYTHONPATH"
-
-# Base directory for model checkpoints (User specified)
-MODEL_CHECKPOINTS_BASE="$PROJECT_ROOT/model_checkpoints"
+# Base directory for model checkpoints
+MODEL_CHECKPOINTS_BASE="${MODEL_CHECKPOINTS_BASE:-$PROJECT_ROOT/model_checkpoints}"
 # Main Output directory
 DATE_STR=$(date +%Y%m%d_%H%M%S)
 MAIN_OUTPUT_DIR="$PROJECT_ROOT/inference_results/repeated_run_${DATE_STR}"

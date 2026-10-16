@@ -1,27 +1,28 @@
 #!/bin/bash
 #SBATCH --job-name=PAI-Summary
-#SBATCH --account=ec192
-#SBATCH --partition=accel
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:rtx30:1
-#SBATCH --output=/fp/projects01/ec192/Github/PAI-meets-AI-2/code/slurm_scripts/logs/summary_%j.out
-#SBATCH --error=/fp/projects01/ec192/Github/PAI-meets-AI-2/code/slurm_scripts/logs/summary_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --output=logs/summary_%j.out
+#SBATCH --error=logs/summary_%j.err
 
 # ============================================================================
 # PAI Hyperparameter Summary & Inference
 # ============================================================================
 # Output: CSV file in experiments/hyperparam_search/
+# Submit:  code/slurm_scripts/submit.sh code/slurm_scripts/run_summary.sh
+# Account, partition and environment come from cluster.env; this job uses
+# SUMMARY_MODULES / SUMMARY_VENV_PATH from there if they are set.
 # ============================================================================
 
 set -e
 set -u
 
-PROJECT_ROOT="/fp/projects01/ec192/Github/PAI-meets-AI-2"
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
+JOB_PROFILE=SUMMARY
 
 echo "=================================================="
 echo "PAI Summary and Inference Job"
@@ -30,22 +31,12 @@ echo "Node: ${SLURM_NODELIST}"
 echo "Started: $(date)"
 echo "=================================================="
 
-# Load modules (use PyTorch module which has all dependencies)
-echo "Loading modules..."
-module purge
-module load PyTorch/2.1.2-foss-2023a-CUDA-12.1.1
-echo "✓ Modules loaded"
-echo "✓ Python: $(which python)"
-echo "✓ Version: $(python --version)"
+# Modules, virtual environment and PYTHONPATH (from cluster.env)
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh" || exit 1
 
 # Navigate to project root
-echo "Navigating to: $PROJECT_ROOT"
 cd "$PROJECT_ROOT"
 echo "✓ Current directory: $(pwd)"
-
-# CRITICAL: Set PYTHONPATH so Python can find the code package
-export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
-echo "✓ PYTHONPATH: $PYTHONPATH"
 
 # Verify files exist
 if [ ! -f "code/config.py" ]; then
@@ -77,7 +68,7 @@ echo "Running Summary & Inference"
 echo "=================================================="
 echo ""
 
-python -u code/summarize_and_infer.py --exp_dir /fp/projects01/ec192/Github/PAI-meets-AI-2/experiments --print-table
+python -u code/summarize_and_infer.py --exp_dir "$PROJECT_ROOT/experiments" --print-table
 
 EXIT_CODE=$?
 

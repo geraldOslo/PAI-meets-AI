@@ -51,6 +51,7 @@ SPDX-License-Identifier: MIT
 
 import os
 from pathlib import Path
+from cluster_env import project_root, sbatch_lines   # local settings from cluster.env
 import argparse
 
 # ============================================================================
@@ -185,14 +186,12 @@ SEARCH_SPACE_PHASE6 = {
 
 SLURM_TEMPLATE_PHASE6 = """#!/bin/bash
 #SBATCH --job-name=pai_{experiment}
-#SBATCH --account=ec192
-#SBATCH --partition=accel
-#SBATCH --gres=gpu:1
+{cluster_sbatch}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 #SBATCH --time={time_allocation}
-#SBATCH --output=code/slurm_scripts/logs/pai_{experiment}_%j.out
-#SBATCH --error=code/slurm_scripts/logs/pai_{experiment}_%j.err
+#SBATCH --output={project_root}/code/slurm_scripts/logs/pai_{experiment}_%j.out
+#SBATCH --error={project_root}/code/slurm_scripts/logs/pai_{experiment}_%j.err
 # Request any available GPU (RTX30, A100, V100, etc.)
 
 # ============================================================================
@@ -204,8 +203,7 @@ SLURM_TEMPLATE_PHASE6 = """#!/bin/bash
 set -e
 set -u
 
-PROJECT_ROOT="/fp/projects01/ec192/Github/PAI-meets-AI-2"
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
+PROJECT_ROOT="{project_root}"
 
 echo "=================================================="
 echo "Phase 6 Experiment: {experiment}"
@@ -217,14 +215,12 @@ echo "=================================================="
 
 # Load modules
 echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh"   # modules, venv, PYTHONPATH from cluster.env
 echo "✓ Modules loaded"
 
 # Activate virtual environment
 echo "Activating virtual environment..."
-source "$VENV_PATH/bin/activate"
+# (virtual environment activated by job_env.sh)
 echo "✓ Python: $(which python)"
 echo "✓ Version: $(python --version)"
 
@@ -324,6 +320,8 @@ def generate_slurm_script(experiment_name: str, config: dict, model: str) -> str
     params_str = format_params_for_slurm(config["params"])
 
     return SLURM_TEMPLATE_PHASE6.format(
+        cluster_sbatch=sbatch_lines(),
+        project_root=project_root(),
         experiment=experiment_name,
         description=config["description"],
         time_allocation=time_allocation,

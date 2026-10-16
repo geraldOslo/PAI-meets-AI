@@ -96,6 +96,28 @@ python calculate_dataset_statistics.py
 # Update mean/std values in code/config.py with the output
 ```
 
+### Local Configuration
+
+Paths and cluster settings are kept out of the repository in two gitignored files, each created from a committed template:
+
+| File | Template | Holds | Used by |
+|------|----------|-------|---------|
+| `code/config.py` | `code/config_example.py` | Dataset paths, output folder, training settings | The Python code |
+| `cluster.env` | `cluster.env.example` | Slurm account, partition, GPU type, modules, virtual environment, data and checkpoint folders | The Slurm scripts and the `hyperparam_search_phase*.py` generators |
+
+```bash
+cp cluster.env.example cluster.env      # then edit it
+code/slurm_scripts/submit.sh code/slurm_scripts/slurm_batch_inference.sh
+```
+
+`submit.sh` reads `cluster.env`, passes the account, partition and GPU request to `sbatch`, and submits from the repository root, so job logs go to `logs/`. Inside each job, `code/slurm_scripts/job_env.sh` loads the modules, activates the virtual environment and sets `PYTHONPATH`. A variable set on the command line overrides the file, for example `DATA_DIR=/other/clips code/slurm_scripts/submit.sh ...`.
+
+To keep local values from being committed by mistake, enable the pre-commit hook once per clone. It refuses commits that contain the account or a path from your `cluster.env`:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ---
 
 ## Quick Start
@@ -160,8 +182,11 @@ The CSV contains:
 
 ```
 PAI-meets-AI/
+├── cluster.env.example              # Template for cluster.env (local cluster settings, gitignored)
+├── .githooks/pre-commit             # Optional check against committing local values
 ├── code/
 │   ├── config.py                    # User config (create from config_example.py)
+│   ├── cluster_env.py               # Reads cluster.env for the hyperparam_search generators
 │   ├── summarize_and_infer.py       # Result aggregation & CSV generation
 │   │
 │   ├── hyperparam_search_phase*.py  # Phase 1/2/3/4/5/6 experiment definitions
@@ -186,8 +211,10 @@ PAI-meets-AI/
 │   │   └── run_single_inference.py
 │   │
 │   └── slurm_scripts/
+│       ├── submit.sh                         # Submit a job with the settings in cluster.env
+│       ├── job_env.sh, cluster_env.sh        # Shared job environment (modules, venv, PYTHONPATH)
 │       ├── run_summary.sh                    # Slurm job for summarization
-│       ├── slurm_inference_*.sh              # Inference jobs (incl. repeated runs)
+│       ├── slurm_*.sh                        # Inference, batch inference and XAI jobs
 │       └── logs/                             # Auto-generated job logs
 │
 ├── statistics/
@@ -277,7 +304,7 @@ python code/summarize_and_infer.py --print-table
 python code/summarize_and_infer.py --debug
 
 # Run via Slurm
-sbatch code/slurm_scripts/run_summary.sh
+code/slurm_scripts/submit.sh code/slurm_scripts/run_summary.sh
 ```
 
 ### Inference on an External Dataset
@@ -300,12 +327,11 @@ Rows with `PAI = NS` are skipped. Edit the constants in the `CONFIGURATION` sect
 python code/test_inference/PAI_batch_inference.py
 ```
 
-The constants can also be overridden on the command line (`--data-dir`, `--output-dir`, `--resnet50`, `--efficientnet-b3`, `--convnext-tiny`, `--predictions-only`). On the cluster, use `code/slurm_scripts/slurm_batch_inference.sh`, which takes the data folder and checkpoint folder from environment variables:
+The constants can also be overridden on the command line (`--data-dir`, `--output-dir`, `--resnet50`, `--efficientnet-b3`, `--convnext-tiny`, `--predictions-only`). On the cluster, use `code/slurm_scripts/slurm_batch_inference.sh`. It takes the data folder (`DATA_DIR`) and checkpoint folder (`MODEL_CHECKPOINTS_BASE`, default `model_checkpoints/`) from `cluster.env`, and either can be overridden when submitting:
 
 ```bash
-mkdir -p logs
-DATA_DIR=/path/to/clips MODEL_CHECKPOINTS_BASE=/path/to/model_checkpoints \
-    sbatch code/slurm_scripts/slurm_batch_inference.sh
+code/slurm_scripts/submit.sh code/slurm_scripts/slurm_batch_inference.sh
+DATA_DIR=/path/to/other_clips code/slurm_scripts/submit.sh code/slurm_scripts/slurm_batch_inference.sh
 ```
 
 Architecture and normalization values are read from the checkpoint when stored there; older checkpoints fall back to the file name (it must contain `resnet`, `efficientnet` or `convnext`).
@@ -318,10 +344,10 @@ A combined summary across all models is written to `OUTPUT_DIR/summary.csv`.
 
 ### Prediction Stability (Repeated Inference)
 
-To check that predictions are reproducible, `code/slurm_scripts/slurm_inference_repeated.sh` runs inference three times for each architecture and writes the runs to `inference_results/repeated_run_YYYYMMDD_HHMMSS/run_{1,2,3}/`. Submit it from the project root, with the checkpoints in `model_checkpoints/`:
+To check that predictions are reproducible, `code/slurm_scripts/slurm_inference_repeated.sh` runs inference three times for each architecture and writes the runs to `inference_results/repeated_run_YYYYMMDD_HHMMSS/run_{1,2,3}/`. The checkpoints are taken from `MODEL_CHECKPOINTS_BASE` (default `model_checkpoints/`):
 
 ```bash
-sbatch code/slurm_scripts/slurm_inference_repeated.sh
+code/slurm_scripts/submit.sh code/slurm_scripts/slurm_inference_repeated.sh
 ```
 
 Analyze the runs (QWK per run, pairwise agreement between runs, probability drift) with R:

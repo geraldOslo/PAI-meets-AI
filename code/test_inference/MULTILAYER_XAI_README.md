@@ -445,7 +445,7 @@ test_data = test_data.head(50)  # Process only first 50 images
 
 ## License
 
-This code is part of the PAI-meets-AI-2 project.
+This code is part of the PAI-meets-AI project.
 
 **SPDX-License-Identifier**: MIT
 

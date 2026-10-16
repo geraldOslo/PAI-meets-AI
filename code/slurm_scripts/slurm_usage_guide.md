@@ -1,5 +1,9 @@
 # Slurm Scripts Usage Guide
 
+> **Note:** this guide describes the earlier per-model `submit_*.sh` scripts. The current scripts take the
+> account, partition, modules, virtual environment and data paths from `cluster.env` and are submitted with
+> `code/slurm_scripts/submit.sh` - see *Local configuration* in the README. Paths below are placeholders.
+
 ## Overview
 
 Three separate Slurm scripts for parallel training:
@@ -22,11 +26,11 @@ Three separate Slurm scripts for parallel training:
 Edit all three scripts and change:
 
 ```bash
-#SBATCH --mail-user=your.email@uio.no  # Line 13
+#SBATCH --mail-user=your.email@example.org  # Line 13
 
 # And verify these paths (around line 60-62):
-DATA_CSV="/fp/projects01/ec192/data/endo-radiographs/full_dataset/data.csv"
-DATA_ROOT="/fp/projects01/ec192/data/endo-radiographs/full_dataset"
+DATA_CSV="/path/to/data/full_dataset/data.csv"
+DATA_ROOT="/path/to/data/full_dataset"
 ```
 
 ### Step 2: Ensure EPOCHS=1 (Already Set for Testing)
@@ -116,14 +120,14 @@ grep -i "training completed" logs/resnet50_*.out
 
 ```bash
 # ResNet50
-ls -lh /fp/projects01/ec192/pai_experiments/resnet50/
-cat /fp/projects01/ec192/pai_experiments/resnet50/*/experiment_summary.json
+ls -lh /path/to/pai_experiments/resnet50/
+cat /path/to/pai_experiments/resnet50/*/experiment_summary.json
 
 # ConvNeXt-Tiny
-ls -lh /fp/projects01/ec192/pai_experiments/convnext_tiny/
+ls -lh /path/to/pai_experiments/convnext_tiny/
 
 # EfficientNet-B3
-ls -lh /fp/projects01/ec192/pai_experiments/efficientnet_b3/
+ls -lh /path/to/pai_experiments/efficientnet_b3/
 ```
 
 ### 4. Verify Oversampling Worked
@@ -270,7 +274,7 @@ If `Elapsed ≈ TimeLimit`, it ran out of time. Increase time allocation.
 
 Add to the script before `python train_pai_simple_split.py`:
 ```bash
-export PYTHONPATH=/fp/projects01/ec192/code:$PYTHONPATH
+export PYTHONPATH=/path/to/PAI-meets-AI/code:$PYTHONPATH
 ```
 
 ---
@@ -299,7 +303,7 @@ scancel -n pai_resnet50
 After completion, check:
 
 ```bash
-/fp/projects01/ec192/pai_experiments/
+/path/to/pai_experiments/
 ├── resnet50/
 │   └── pai_simple_split_experiment_TIMESTAMP/
 │       ├── training.log
@@ -328,7 +332,7 @@ After all three complete:
 # Quick comparison
 for model in resnet50 convnext_tiny efficientnet_b3; do
     echo "=== $model ==="
-    grep -A 5 "best_metrics" /fp/projects01/ec192/pai_experiments/$model/*/experiment_summary.json
+    grep -A 5 "best_metrics" /path/to/pai_experiments/$model/*/experiment_summary.json
 done
 ```
 
@@ -349,13 +353,13 @@ You'll receive emails for:
 
 **Note:** Update the email address in all three scripts:
 ```bash
-#SBATCH --mail-user=your.email@uio.no
+#SBATCH --mail-user=your.email@example.org
 ```
 
 Or comment out if you don't want emails:
 ```bash
 # #SBATCH --mail-type=ALL
-# #SBATCH --mail-user=your.email@uio.no
+# #SBATCH --mail-user=your.email@example.org
 ```
 
 ---
@@ -443,7 +447,7 @@ scancel <JOBID>
 sacct -j <JOBID> --format=JobID,State,ExitCode,Elapsed
 
 # View results
-cat /fp/projects01/ec192/pai_experiments/resnet50/*/experiment_summary.json
+cat /path/to/pai_experiments/resnet50/*/experiment_summary.json
 ```
 
 ---

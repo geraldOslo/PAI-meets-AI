@@ -1,13 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=xai_top3_final
-#SBATCH --account=ec192
-#SBATCH --partition=accel
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
-#SBATCH --output=/fp/projects01/ec192/Github/PAI-meets-AI-2/code/slurm_scripts/logs/multilayer_xai_%j.out
-#SBATCH --error=/fp/projects01/ec192/Github/PAI-meets-AI-2/code/slurm_scripts/logs/multilayer_xai_%j.err
+#SBATCH --output=logs/multilayer_xai_%j.out
+#SBATCH --error=logs/multilayer_xai_%j.err
 
 # ============================================================================
 # Multi-Layer XAI Analysis for TOP 3 WINNING PAI Classification Models
@@ -26,7 +24,7 @@
 #   - Comparison between late-layer and combined heatmaps
 #
 # Usage:
-#   sbatch slurm_multilayer_xai.sh
+#   code/slurm_scripts/submit.sh code/slurm_scripts/slurm_multilayer_xai.sh
 #
 # Output: experiments/{model}/multilayer_xai_{timestamp}/average_heatmaps/
 # ============================================================================
@@ -39,23 +37,11 @@ echo "Node: $SLURM_NODELIST"
 echo "GPUs: $SLURM_JOB_GPUS"
 echo "=================================================="
 
-# --- Load modules ---
-echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
-
-# --- Environment variables ---
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export PYTHONUNBUFFERED=1
-
-# --- Activate virtual environment ---
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
-echo "Activating virtual environment at $VENV_PATH..."
-source $VENV_PATH/bin/activate
+# --- Modules, virtual environment and PYTHONPATH (from cluster.env) ---
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh" || exit 1
 
 # --- Navigate to project root ---
-PROJECT_ROOT="/fp/projects01/ec192/Github/PAI-meets-AI-2"
 echo "Navigating to project root: $PROJECT_ROOT"
 cd $PROJECT_ROOT
 

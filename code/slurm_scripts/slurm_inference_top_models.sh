@@ -1,13 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=PAI_Top3_Inference
-#SBATCH --account=ec192
 #SBATCH --time=01:30:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=40G
-#SBATCH --partition=accel
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:1
+# (previously run on an A100: SBATCH_GRES=gpu:a100:1 code/slurm_scripts/submit.sh ...)
 #SBATCH --output=logs/inference_top3_%j.out
 #SBATCH --error=logs/inference_top3_%j.err
 
@@ -19,6 +18,7 @@
 #   1. ResNet50:        p5_resnet_alpha_0_5 (Test QWK: 0.8068)
 #   2. EfficientNet-B3: effnet_exp5_lower_lr (Test QWK: 0.7811)
 #   3. ConvNeXt-Tiny:   convnext_exp2_moderate_settings (Test QWK: 0.7447)
+# Submit:  code/slurm_scripts/submit.sh code/slurm_scripts/slurm_inference_top_models.sh
 # ============================================================================
 
 echo "=================================================="
@@ -28,27 +28,15 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "=================================================="
 
-# Load modules
-echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
-
-# Activate virtual environment
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
-echo "Activating virtual environment: $VENV_PATH"
-source $VENV_PATH/bin/activate
-
-# Set PYTHONPATH
-CODE_DIR="/fp/projects01/ec192/Github/PAI-meets-AI-2/code"
-export PYTHONPATH="$CODE_DIR:$PYTHONPATH"
-echo "Setting PYTHONPATH to: $PYTHONPATH"
+# Modules, virtual environment and PYTHONPATH (from cluster.env); sets CODE_DIR
+PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh" || exit 1
 
 # Base directory for model checkpoints
-MODEL_CHECKPOINTS_BASE="/fp/projects01/ec192/Github/PAI-meets-AI-2/model_checkpoints"
+MODEL_CHECKPOINTS_BASE="${MODEL_CHECKPOINTS_BASE:-$PROJECT_ROOT/model_checkpoints}"
 
 # Output directory for inference results
-OUTPUT_DIR="/fp/projects01/ec192/Github/PAI-meets-AI-2/inference_results/top_models_$(date +%Y%m%d_%H%M%S)"
+OUTPUT_DIR="$PROJECT_ROOT/inference_results/top_models_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTPUT_DIR"
 echo "Output directory: $OUTPUT_DIR"
 

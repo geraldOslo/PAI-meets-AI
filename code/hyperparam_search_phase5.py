@@ -32,6 +32,7 @@ Copyright (c) 2025 Gerald Torgersen
 import subprocess
 import argparse
 from pathlib import Path
+from cluster_env import project_root, sbatch_lines   # local settings from cluster.env
 from datetime import datetime
 
 # =============================================================================
@@ -290,9 +291,7 @@ SEARCH_SPACE_PHASE5 = {
 
 SLURM_TEMPLATE = """#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --account=ec192
-#SBATCH --partition=accel
-#SBATCH --gres=gpu:1
+{cluster_sbatch}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 #SBATCH --time={time_str}
@@ -308,8 +307,7 @@ SLURM_TEMPLATE = """#!/bin/bash
 set -e
 set -u
 
-PROJECT_ROOT="/fp/projects01/ec192/Github/PAI-meets-AI-2"
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
+PROJECT_ROOT="{project_root}"
 
 echo "=================================================="
 echo "Phase 5 Experiment: {experiment}"
@@ -321,14 +319,12 @@ echo "=================================================="
 
 # Load modules
 echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh"   # modules, venv, PYTHONPATH from cluster.env
 echo "✓ Modules loaded"
 
 # Activate virtual environment
 echo "Activating virtual environment..."
-source "$VENV_PATH/bin/activate"
+# (virtual environment activated by job_env.sh)
 echo "✓ Python: $(which python)"
 echo "✓ Version: $(python --version)"
 
@@ -422,6 +418,8 @@ def generate_slurm_script(experiment: str, config: dict, output_dir: Path) -> Pa
 
     # Fill template
     script_content = SLURM_TEMPLATE.format(
+        cluster_sbatch=sbatch_lines(),
+        project_root=project_root(),
         job_name=job_name,
         time_str=time_str,
         log_path=log_path,

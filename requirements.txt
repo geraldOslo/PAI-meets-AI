@@ -1,5 +1,5 @@
 # =============================================================================
-# PAI-meets-AI-2 Requirements
+# PAI-meets-AI Requirements
 # Deep Learning for Periapical Index Classification
 #
 # Author: Gerald Torgersen

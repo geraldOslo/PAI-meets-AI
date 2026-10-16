@@ -1,12 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=PAI_Batch_Inference
-#SBATCH --account=ec192
 #SBATCH --time=01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --partition=accel
 #SBATCH --gres=gpu:1
 #SBATCH --output=logs/batch_inference_%j.out
 #SBATCH --error=logs/batch_inference_%j.err
@@ -19,20 +17,18 @@
 # with the human PAI (PAI_true) and the predicted PAI (PAI_pred), plus
 # metrics_report.txt and a combined summary.csv.
 #
-# Submit from the project root. Slurm does not create the log folder, so:
-#   mkdir -p logs
-#   sbatch code/slurm_scripts/slurm_batch_inference.sh
+# Submit (account, partition, environment and DATA_DIR come from cluster.env):
+#   code/slurm_scripts/submit.sh code/slurm_scripts/slurm_batch_inference.sh
 #
-# Defaults can be overridden with environment variables:
-#   DATA_DIR                folder with data.csv and the clips
+# Settings, from cluster.env or the environment (the environment wins):
+#   DATA_DIR                folder with data.csv and the clips (required)
 #   MODEL_CHECKPOINTS_BASE  folder with resnet50_best.pth, efficientnet-b3_best.pth,
 #                           convnext-tiny_best.pth   [default: <project root>/model_checkpoints]
 #   OUTPUT_DIR              results folder           [default: <project root>/inference_results/batch_<timestamp>]
 #   PREDICTIONS_ONLY        1 = only filename, PAI_true, PAI_pred in predictions.csv (default),
 #                           0 = also class probabilities and a 'correct' flag
-#   VENV_PATH               Python virtual environment
-# Example:
-#   DATA_DIR=/projects/ec192/data/endo-radiographs/other_clips sbatch code/slurm_scripts/slurm_batch_inference.sh
+# Example with another set of clips:
+#   DATA_DIR=/path/to/other_clips code/slurm_scripts/submit.sh code/slurm_scripts/slurm_batch_inference.sh
 # ============================================================================
 
 echo "=================================================="
@@ -42,21 +38,15 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "=================================================="
 
-# Load modules
-echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
-
-# Activate virtual environment
-VENV_PATH="${VENV_PATH:-/fp/projects01/ec192/python_envs/cnn_env}"
-echo "Activating virtual environment: $VENV_PATH"
-source "$VENV_PATH/bin/activate"
-
-# Paths (project root = directory the job was submitted from)
+# Modules, virtual environment and PYTHONPATH (from cluster.env); sets CODE_DIR
 PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$PWD}"
-CODE_DIR="$PROJECT_ROOT/code"
-DATA_DIR="${DATA_DIR:-/projects/ec192/data/endo-radiographs/clips300_2026_10_15}"
+source "$PROJECT_ROOT/code/slurm_scripts/job_env.sh" || exit 1
+
+# Paths
+if [ -z "${DATA_DIR:-}" ]; then
+    echo "ERROR: DATA_DIR is not set - add it to cluster.env or pass DATA_DIR=... when submitting"
+    exit 1
+fi
 MODEL_CHECKPOINTS_BASE="${MODEL_CHECKPOINTS_BASE:-$PROJECT_ROOT/model_checkpoints}"
 OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT/inference_results/batch_$(date +%Y%m%d_%H%M%S)}"
 

@@ -322,6 +322,10 @@ autogen_hp*.*
 CLAUDE.md
 .claude/
 
+# Local cluster settings (template: cluster.env.example) and job scripts generated from them
+cluster.env
+code/slurm_scripts/autogen_*.sh
+
 # Inference output (per-image predictions and filenames from local datasets)
 inference_results/
 

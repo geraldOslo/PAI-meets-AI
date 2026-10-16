@@ -16,6 +16,8 @@ import argparse
 import subprocess
 from pathlib import Path
 
+from cluster_env import project_root, sbatch_lines   # local settings from cluster.env
+
 # ==============================================================================
 # PHASE 2: FOCUSED OPTIMIZATION - ALL ARCHITECTURES
 # Based on Phase 1 Results:
@@ -295,9 +297,7 @@ SEARCH_SPACE_PHASE2 = {
 # --- Slurm Script Template ---
 SLURM_TEMPLATE = """#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --account=ec192
-#SBATCH --partition=accel
-#SBATCH --gres=gpu:rtx30:1
+{cluster_sbatch}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 #SBATCH --time={time_str}
@@ -315,25 +315,10 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURM_NODELIST"
 echo "=================================================="
 
-# --- Load modules ---
-echo "Loading modules..."
-module purge
-module load Python/3.11.5-GCCcore-13.2.0
-module load CUDA/12.6.0
-
-# --- Environment variables ---
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export PYTHONUNBUFFERED=1
-
-# --- Activate virtual environment ---
-VENV_PATH="/fp/projects01/ec192/python_envs/cnn_env"
-echo "Activating virtual environment at $VENV_PATH..."
-source $VENV_PATH/bin/activate
-
-# --- Navigate to project root ---
-PROJECT_ROOT="/fp/projects01/ec192/Github/PAI-meets-AI-2"
-echo "Navigating to project root: $PROJECT_ROOT"
-cd $PROJECT_ROOT
+# --- Modules, virtual environment and PYTHONPATH (from cluster.env) ---
+PROJECT_ROOT="{project_root}"
+cd "$PROJECT_ROOT"
+source code/slurm_scripts/job_env.sh || exit 1
 
 # --- Job Execution ---
 echo ""
@@ -420,6 +405,8 @@ def generate_slurm_script(model: str, experiment: str, exp_config: dict, output_
     params_str = format_params(params)
 
     script_content = SLURM_TEMPLATE.format(
+        cluster_sbatch=sbatch_lines(),
+        project_root=project_root(),
         job_name=job_name,
         time_str=time_str,
         log_path=log_path,
