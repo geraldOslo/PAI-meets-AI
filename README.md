@@ -298,10 +298,18 @@ Rows with `PAI = NS` are skipped. Edit the constants in the `CONFIGURATION` sect
 python code/test_inference/PAI_batch_inference.py
 ```
 
+The constants can also be overridden on the command line (`--data-dir`, `--output-dir`, `--resnet50`, `--efficientnet-b3`, `--convnext-tiny`, `--predictions-only`). On the cluster, use `code/slurm_scripts/slurm_batch_inference.sh`, which takes the data folder and checkpoint folder from environment variables:
+
+```bash
+mkdir -p logs
+DATA_DIR=/path/to/clips MODEL_CHECKPOINTS_BASE=/path/to/model_checkpoints \
+    sbatch code/slurm_scripts/slurm_batch_inference.sh
+```
+
 Architecture and normalization values are read from the checkpoint when stored there; older checkpoints fall back to the file name (it must contain `resnet`, `efficientnet` or `convnext`).
 
 Output is written to `OUTPUT_DIR/<model_name>/`:
-- `predictions.csv` - per-image predictions and class probabilities
+- `predictions.csv` - per-image predictions and class probabilities (set `SAVE_PROBABILITIES = False` to keep only `filename`, `PAI_true` and `PAI_pred`)
 - `metrics_report.txt` - accuracy, QWK, confusion matrix and per-class metrics
 
 A combined summary across all models is written to `OUTPUT_DIR/summary.csv`.

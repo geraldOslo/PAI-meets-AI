@@ -6,7 +6,8 @@ Runs all three trained PAI models (EfficientNet-B3, ResNet50, ConvNeXt-Tiny)
 on an external dataset folder containing pre-cropped image clips and a
 data.csv label file. No GUI, no config.py dependency.
 
-Edit the constants in the CONFIGURATION section below before running.
+Edit the constants in the CONFIGURATION section below before running, or
+override them on the command line (convenient for Slurm jobs).
 
 Expected dataset layout:
     <DATA_DIR>/
@@ -23,8 +24,12 @@ A combined summary across all models is written to OUTPUT_DIR/summary.csv.
 
 Usage:
     python PAI_batch_inference.py
+    python PAI_batch_inference.py --data-dir DIR --output-dir DIR \
+        --resnet50 PATH --efficientnet-b3 PATH --convnext-tiny PATH \
+        --predictions-only
 """
 
+import argparse
 import os
 import sys
 import warnings
@@ -54,6 +59,10 @@ CHECKPOINTS = {
     "resnet50":        r"C:\path\to\resnet50_best.pth",
     "convnext_tiny":   r"C:\path\to\convnext_tiny_best.pth",
 }
+
+# True: predictions.csv also holds the class probabilities and a 'correct' flag.
+# False: predictions.csv holds only filename, PAI_true (ground truth) and PAI_pred.
+SAVE_PROBABILITIES = True
 
 # Default normalization — overridden automatically by values stored in the checkpoint.
 DEFAULT_MEAN = [0.3784975, 0.3784975, 0.3784975]
@@ -317,15 +326,38 @@ def compute_metrics(results: pd.DataFrame, model_name: str) -> dict:
 # Main
 # ============================================================================
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run the trained PAI models on a folder of clips with a data.csv. "
+                    "Options override the constants in the CONFIGURATION section.")
+    parser.add_argument("--data-dir", help="Folder with data.csv and the image clips")
+    parser.add_argument("--output-dir", help="Results root; per-model subfolders are created here")
+    parser.add_argument("--resnet50", help="ResNet50 checkpoint (.pth)")
+    parser.add_argument("--efficientnet-b3", dest="efficientnet_b3", help="EfficientNet-B3 checkpoint (.pth)")
+    parser.add_argument("--convnext-tiny", dest="convnext_tiny", help="ConvNeXt-Tiny checkpoint (.pth)")
+    parser.add_argument("--predictions-only", action="store_true",
+                        help="Write only filename, PAI_true and PAI_pred to predictions.csv")
+    return parser.parse_args()
+
+
 def main():
-    # Validate DATA_DIR
-    if not Path(DATA_DIR).exists():
-        print(f"ERROR: DATA_DIR does not exist: {DATA_DIR}")
+    args = parse_args()
+    data_dir   = args.data_dir or DATA_DIR
+    output_dir = args.output_dir or OUTPUT_DIR
+    checkpoints = dict(CHECKPOINTS)
+    for arch in checkpoints:
+        if getattr(args, arch):
+            checkpoints[arch] = getattr(args, arch)
+    save_probabilities = SAVE_PROBABILITIES and not args.predictions_only
+
+    # Validate data_dir
+    if not Path(data_dir).exists():
+        print(f"ERROR: data directory does not exist: {data_dir}")
         sys.exit(1)
 
     # Filter to checkpoints that are actually set and exist
     active = {}
-    for arch, ckpt in CHECKPOINTS.items():
+    for arch, ckpt in checkpoints.items():
         if ckpt is None:
             print(f"  Skipping {arch} (checkpoint set to None)")
             continue
@@ -335,16 +367,16 @@ def main():
         active[arch] = ckpt
 
     if not active:
-        print("ERROR: No valid checkpoints found. Edit CHECKPOINTS in the script.")
+        print("ERROR: No valid checkpoints found. Edit CHECKPOINTS in the script or pass checkpoint paths.")
         sys.exit(1)
 
-    output_root = Path(OUTPUT_DIR)
+    output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
     device = setup_device()
 
-    print(f"\nDataset: {DATA_DIR}")
-    df = load_dataset(DATA_DIR)
+    print(f"\nDataset: {data_dir}")
+    df = load_dataset(data_dir)
     print(f"Loaded {len(df)} images | PAI distribution: "
           + ", ".join(f"{k}:{v}" for k, v in df["PAI"].value_counts().sort_index().items()))
 
@@ -359,7 +391,7 @@ def main():
             model, mean, std, input_size, model_name = load_model(ckpt_path, device)
 
             print(f"  Running inference on {len(df)} images...")
-            results = run_inference(model, df, DATA_DIR, mean, std, input_size, device)
+            results = run_inference(model, df, data_dir, mean, std, input_size, device)
 
             if results.empty:
                 print(f"  No predictions produced for {arch} — skipping")
@@ -370,7 +402,8 @@ def main():
             model_out.mkdir(parents=True, exist_ok=True)
 
             pred_path = model_out / "predictions.csv"
-            results.to_csv(pred_path, index=False)
+            out_cols = list(results.columns) if save_probabilities else ["filename", "PAI_true", "PAI_pred"]
+            results[out_cols].to_csv(pred_path, index=False)
             print(f"  Predictions → {pred_path}")
 
             try:
@@ -416,6 +449,10 @@ def main():
         print(f"{'='*62}")
         print(summary_df.to_string(index=False))
         print(f"\nSummary saved to: {summary_path}")
+
+    if not summary_rows:
+        print("\nERROR: no model produced predictions.")
+        sys.exit(1)
 
     print("\nDone.")
 
