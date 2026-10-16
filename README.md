@@ -182,10 +182,6 @@ PAI-meets-AI/
 │   │   ├── multilayer_xai_analysis.py        # Multi-layer XAI
 │   │   └── PAI_inference.py                  # Interactive GUI
 │   │
-│   ├── analysis/
-│   │   ├── analyze_repeated_inference.R      # Stability of repeated runs (text report)
-│   │   └── analyze_repeated_inference.qmd    # Stability of repeated runs (Quarto/HTML)
-│   │
 │   ├── utils/
 │   │   └── run_single_inference.py
 │   │
@@ -193,6 +189,12 @@ PAI-meets-AI/
 │       ├── run_summary.sh                    # Slurm job for summarization
 │       ├── slurm_inference_*.sh              # Inference jobs (incl. repeated runs)
 │       └── logs/                             # Auto-generated job logs
+│
+├── statistics/
+│   ├── analyze_repeated_inference.R          # Stability of repeated runs (text report)
+│   ├── analyze_repeated_inference.qmd        # Stability of repeated runs (Quarto/HTML)
+│   ├── evaluate_batch_inference.py           # Models + ensemble vs human PAI (QWK, bootstrap CI)
+│   └── evaluate_batch_inference.qmd          # R report: kappas, CIs (per tooth with data.csv), figures
 │
 ├── experiments/
 │   ├── exp*_YYYYMMDD_HHMMSS/                # Phase 1 experiments (15)
@@ -326,12 +328,12 @@ Analyze the runs (QWK per run, pairwise agreement between runs, probability drif
 
 ```bash
 # Text report, written to the run directory
-Rscript code/analysis/analyze_repeated_inference.R --dir inference_results/repeated_run_YYYYMMDD_HHMMSS
+Rscript statistics/analyze_repeated_inference.R --dir inference_results/repeated_run_YYYYMMDD_HHMMSS
 
 # HTML report (Quarto), which also includes an ensemble of the three models.
-# Paths are resolved relative to code/analysis/, so use an absolute path or ../../
-quarto render code/analysis/analyze_repeated_inference.qmd \
-    -P data_dir:../../inference_results/repeated_run_YYYYMMDD_HHMMSS
+# Paths are resolved relative to statistics/, so use an absolute path or ../
+quarto render statistics/analyze_repeated_inference.qmd \
+    -P data_dir:../inference_results/repeated_run_YYYYMMDD_HHMMSS
 ```
 
 Required R packages: `tidyverse`, `irr` and `optparse` for the script; `tidyverse`, `irr`, `knitr` and `kableExtra` for the Quarto report.

@@ -1,0 +1,258 @@
+---
+title: "PAI batch inference vs human scores"
+subtitle: "Three models and their ensemble compared with the human PAI score"
+date: last-modified
+editor: source
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: show
+    fig-width: 7
+execute:
+  echo: true
+  warning: false
+  message: false
+params:
+  # Leave empty to use the newest ../inference_results/batch_* folder, or set it:
+  #   quarto render evaluate_batch_inference.qmd -P results_dir:/path/to/batch_YYYYMMDD_HHMMSS
+  results_dir: ""
+  # Optional: the clips' data.csv (filename, quadrant, tooth, root, PAI). If set, or if a copy is
+  # placed at <results_dir>/data.csv, confidence intervals are also computed by resampling teeth.
+  data_csv: ""
+  n_boot: 2000
+  seed: 42
+---
+
+Each rater (ResNet50, EfficientNet-B3, ConvNeXt-Tiny and their ensemble) is compared with the human PAI score. The primary measure is quadratic weighted kappa (QWK). The notebook recomputes the statistics of `evaluate_batch_inference.py` and cross-checks them against its output (section 8).
+
+**Definitions**
+
+- **QWK**: 1 - (weighted observed disagreement / weighted disagreement expected by chance), with weights `(i - j)^2 / 16`, so a miss by two PAI steps costs four times a miss by one. Linear kappa uses `|i - j| / 4`; Cohen's (unweighted) kappa counts every miss equally.
+- **Ensemble**: median of the three predicted scores (majority vote; the middle value if all three differ). If the files hold class probabilities, the mean-probability ensemble is added.
+- **Binary**: healthy (PAI 1-2) vs pathological (PAI 3-5); sensitivity and specificity refer to detecting pathology.
+- **Bias**: mean of (predicted - human); negative means the rater scores lower than the human.
+
+```{r setup}
+library(tidyverse)
+library(irr)          # kappa2(), as in analyze_repeated_inference.qmd
+if (!exists("params")) params <- rmarkdown::yaml_front_matter("evaluate_batch_inference.qmd")$params  # chunks run interactively
+set.seed(params$seed)
+models <- c(resnet50 = "ResNet50", efficientnet_b3 = "EfficientNet-B3", convnext_tiny = "ConvNeXt-Tiny")
+ENS    <- "Ensemble (median of models)"
+ENS_P  <- "Ensemble (mean probability)"
+PROB   <- paste0("prob_PAI", 1:5)
+f3 <- function(x) formatC(x, format = "f", digits = 3)
+theme_set(theme_minimal(base_size = 11) + theme(panel.grid.minor = element_blank()))
+```
+
+## 1. Load and check the data
+
+The three `predictions.csv` files must list the same images in the same order, with the same human score. If `data.csv` is available, consecutive rows with the same quadrant and tooth are treated as one tooth (its roots), which is used for the tooth-level intervals.
+
+```{r load}
+res_dir <- if (nzchar(params$results_dir)) params$results_dir else
+  tail(sort(Sys.glob("../inference_results/batch_*")), 1)
+stopifnot("no results folder found - set results_dir" = length(res_dir) == 1 && dir.exists(res_dir))
+cat("Results folder:", normalizePath(res_dir, winslash = "/"), "\n")
+
+pred <- map(names(models), ~ read_csv(file.path(res_dir, .x, "predictions.csv"), show_col_types = FALSE)) %>%
+  set_names(models)
+stopifnot(map_lgl(pred, ~ identical(.x$filename, pred[[1]]$filename)),
+          map_lgl(pred, ~ identical(.x$PAI_true, pred[[1]]$PAI_true)),
+          !anyDuplicated(pred[[1]]$filename))
+
+d <- bind_cols(tibble(filename = pred[[1]]$filename, human = pred[[1]]$PAI_true),
+               as_tibble(map(pred, "PAI_pred")))
+d[[ENS]] <- as.integer(apply(as.matrix(d[unname(models)]), 1, median))   # median of 3 integers is an integer
+raters <- c(unname(models), ENS)
+if (all(map_lgl(pred, ~ all(PROB %in% names(.x))))) {                    # run without --predictions-only
+  d[[ENS_P]] <- max.col(Reduce(`+`, map(pred, ~ as.matrix(.x[PROB]))), ties.method = "first")
+  raters <- c(raters, ENS_P)
+}
+stopifnot(all(unlist(d[c("human", raters)]) %in% 1:5))
+
+data_csv <- if (nzchar(params$data_csv)) params$data_csv else file.path(res_dir, "data.csv")
+tooth <- NULL
+if (file.exists(data_csv)) {
+  meta <- read_csv(data_csv, col_types = cols(.default = "c")) %>%
+    mutate(tooth_id = cumsum(coalesce(quadrant != lag(quadrant) | tooth != lag(tooth), TRUE)))
+  m <- match(d$filename, meta$filename)
+  stopifnot("images missing from data.csv" = !anyNA(m),
+            "PAI in data.csv differs from PAI_true" = all(as.integer(meta$PAI[m]) == d$human))
+  tooth <- meta$tooth_id[m]
+  cat("Teeth:", n_distinct(tooth), "| roots per tooth:", round(nrow(d) / n_distinct(tooth), 2), "\n")
+} else cat("No data.csv found - intervals resample single images only.\n")
+
+cat("Images:", nrow(d), "\n"); table(Human = d$human)
+```
+
+## 2. Kappa computed independently
+
+QWK, linear and Cohen's kappa from the confusion matrix (used for everything below) must equal `irr::kappa2`; QWK must also equal a closed form that needs no matrix, `1 - mean((t - p)^2) / (var(t) + var(p) + (mean(t) - mean(p))^2)` with population variances.
+
+```{r kappa}
+conf <- function(t, p) matrix(tabulate((t - 1) * 5 + p, nbins = 25), 5, 5, byrow = TRUE)  # rows human, cols predicted
+kappa_cm <- function(cm, power = 2) {                 # power: 2 quadratic, 1 linear, 0 unweighted
+  w <- outer(1:5, 1:5, function(i, j) if (power == 0) (i != j) + 0 else (abs(i - j) / 4)^power)
+  1 - sum(w * cm) / sum(w * outer(rowSums(cm), colSums(cm)) / sum(cm))
+}
+kappa_irr  <- function(t, p, weight) kappa2(data.frame(factor(t, levels = 1:5), factor(p, levels = 1:5)),
+                                            weight = weight)$value
+pv         <- function(x) mean((x - mean(x))^2)
+qwk_closed <- function(t, p) 1 - mean((t - p)^2) / (pv(t) + pv(p) + (mean(t) - mean(p))^2)
+
+cms <- map(set_names(raters), ~ conf(d$human, d[[.x]]))
+chk <- tibble(rater      = raters,
+              qwk        = unname(map_dbl(cms, kappa_cm, power = 2)),
+              qwk_irr    = map_dbl(raters, ~ kappa_irr(d$human, d[[.x]], "squared")),
+              qwk_closed = map_dbl(raters, ~ qwk_closed(d$human, d[[.x]])),
+              linear     = unname(map_dbl(cms, kappa_cm, power = 1)),
+              linear_irr = map_dbl(raters, ~ kappa_irr(d$human, d[[.x]], "equal")),
+              cohen      = unname(map_dbl(cms, kappa_cm, power = 0)),
+              cohen_irr  = map_dbl(raters, ~ kappa_irr(d$human, d[[.x]], "unweighted")))
+stopifnot(abs(chk$qwk - chk$qwk_irr) < 1e-9, abs(chk$qwk - chk$qwk_closed) < 1e-9,
+          abs(chk$linear - chk$linear_irr) < 1e-9, abs(chk$cohen - chk$cohen_irr) < 1e-9)
+knitr::kable(chk, digits = 4, caption = "Each kappa computed twice or three times (all agree)")
+```
+
+## 3. Bootstrap
+
+Every measure is a function of the 5x5 confusion matrix, so one bootstrap gives intervals for all of them. Each resample scores all raters on the same draw (paired), which makes the differences between raters valid. Images are resampled always; teeth too when `data.csv` is available. Roots of one tooth are correlated, so the tooth-level intervals are the ones to report. Patient-level resampling would be better still, but `data.csv` has no patient ID.
+
+```{r boot}
+metrics <- function(cm) {
+  n <- sum(cm); i <- row(cm); j <- col(cm); path <- 3:5; heal <- 1:2
+  c(qwk = kappa_cm(cm, 2), linear_kappa = kappa_cm(cm, 1), kappa = kappa_cm(cm, 0),
+    accuracy = sum(diag(cm)) / n, mae = sum(abs(i - j) * cm) / n,
+    within_1 = sum(cm[abs(i - j) <= 1]) / n, bias = sum((j - i) * cm) / n,
+    sensitivity = sum(cm[path, path]) / sum(cm[path, ]), specificity = sum(cm[heal, heal]) / sum(cm[heal, ]))
+}
+boot_metrics <- function(cluster = NULL) {
+  groups <- if (!is.null(cluster)) split(seq_len(nrow(d)), cluster)
+  replicate(params$n_boot, {
+    i <- if (is.null(groups)) sample.int(nrow(d), replace = TRUE) else
+      unlist(groups[sample.int(length(groups), replace = TRUE)], use.names = FALSE)
+    sapply(raters, function(r) metrics(conf(d$human[i], d[[r]][i])))
+  }, simplify = "array")                                          # measure x rater x resample
+}
+boots <- list(images = boot_metrics())
+if (!is.null(tooth)) boots$teeth <- boot_metrics(tooth)
+main  <- if (is.null(tooth)) "images" else "teeth"                # intervals reported from here on
+est   <- sapply(cms, metrics)                                     # measure x rater
+lo    <- apply(boots[[main]], c(1, 2), quantile, probs = .025)
+hi    <- apply(boots[[main]], c(1, 2), quantile, probs = .975)
+interval <- function(b, m) { q <- apply(b[m, , ], 1, quantile, probs = c(.025, .975)); paste(f3(q[1, ]), "to", f3(q[2, ])) }
+cat(params$n_boot, "resamples of", paste(names(boots), collapse = " and "), "| reported:", main, "\n")
+```
+
+## 4. Quadratic weighted kappa
+
+```{r qwk-table}
+qwk_tab <- tibble(Rater = raters, QWK = f3(est["qwk", ]), `95% CI (images)` = interval(boots$images, "qwk"))
+if (!is.null(boots$teeth)) qwk_tab$`95% CI (teeth)` <- interval(boots$teeth, "qwk")
+knitr::kable(qwk_tab[order(-est["qwk", ]), ], caption = "QWK vs human score")
+```
+
+```{r qwk-plot}
+#| fig-height: 2.4
+tibble(rater = raters, qwk = est["qwk", ], lo = lo["qwk", ], hi = hi["qwk", ]) %>%
+  mutate(rater = fct_reorder(rater, qwk)) %>%
+  ggplot(aes(qwk, rater)) +
+  geom_linerange(aes(xmin = lo, xmax = hi), linewidth = 0.75, colour = "#2a78d6") +
+  geom_point(size = 3, colour = "#2a78d6") +
+  geom_text(aes(label = f3(qwk)), vjust = -1.1, size = 3.2, colour = "#52514e") +
+  labs(x = paste0("QWK vs human score, 95% CI (resampling ", main, ")"), y = NULL) +
+  theme(panel.grid.major.y = element_blank())
+```
+
+## 5. Other agreement measures
+
+Point estimate (95% CI). Bias below zero means the rater scores lower than the human.
+
+```{r secondary}
+sec <- c(linear_kappa = "Linear kappa", kappa = "Cohen's kappa", accuracy = "Accuracy (exact)",
+         mae = "Mean absolute error", within_1 = "Within 1 PAI step", bias = "Bias (predicted - human)",
+         sensitivity = "Sensitivity, PAI 3-5", specificity = "Specificity, PAI 1-2")
+cell <- function(r) paste0(f3(est[names(sec), r]), " (", f3(lo[names(sec), r]), " to ", f3(hi[names(sec), r]), ")")
+bind_cols(Measure = unname(sec), as_tibble(map(set_names(raters), cell))) %>%
+  knitr::kable(caption = paste0("Agreement with the human score (95% CI, resampling ", main, ")"))
+```
+
+## 6. Paired differences in QWK
+
+Same resamples for both raters in each pair; an interval that excludes 0 indicates a real difference.
+
+```{r differences}
+map_dfr(combn(raters, 2, simplify = FALSE), function(p) {
+  b <- boots[[main]]["qwk", p[2], ] - boots[[main]]["qwk", p[1], ]
+  tibble(Comparison = paste(p[2], "minus", p[1]), Difference = formatC(est["qwk", p[2]] - est["qwk", p[1]], format = "f", digits = 4),
+         `95% CI` = paste(formatC(quantile(b, .025), format = "f", digits = 4), "to", formatC(quantile(b, .975), format = "f", digits = 4)))
+}) %>% knitr::kable(caption = paste0("QWK differences (resampling ", main, ")"))
+```
+
+## 7. Where the errors are
+
+Each row shows how the clips with one human score were classified (share of that row, with counts). The diagonal is agreement.
+
+```{r confusion}
+#| fig-height: !expr 2.6 * ceiling(length(raters) / 2)
+map_dfr(raters, ~ tibble(rater = .x, human = rep(1:5, 5), predicted = rep(1:5, each = 5), n = as.vector(cms[[.x]]))) %>%
+  group_by(rater, human) %>% mutate(share = n / sum(n)) %>% ungroup() %>%
+  mutate(rater = factor(rater, levels = raters)) %>%
+  ggplot(aes(factor(predicted), fct_rev(factor(human)), fill = share)) +
+  geom_tile(colour = "#fcfcfb", linewidth = 0.8) +
+  geom_text(aes(label = paste0(round(100 * share), "%\n", n), colour = share > 0.75), size = 2.6, lineheight = 0.9) +
+  scale_fill_gradientn(colours = c("#fcfcfb", "#cde2fb", "#6da7ec", "#2a78d6", "#184f95"), limits = c(0, 1),
+                       labels = scales::percent) +
+  scale_colour_manual(values = c(`FALSE` = "#0b0b0b", `TRUE` = "#fcfcfb"), guide = "none") +
+  facet_wrap(~ rater, ncol = 2) +
+  labs(x = "Predicted PAI", y = "Human PAI", fill = "Share of row") +
+  theme(panel.grid = element_blank())
+```
+
+How often each score is used, and per-class sensitivity and specificity (one class vs the rest):
+
+```{r per-class}
+bind_cols(PAI = 1:5, Human = rowSums(cms[[1]]), as_tibble(map(cms, colSums))) %>%
+  knitr::kable(caption = "Number of clips given each PAI score")
+
+per_class <- map_dfr(raters, function(r) {
+  cm <- cms[[r]]; tp <- diag(cm); fn <- rowSums(cm) - tp; fp <- colSums(cm) - tp; tn <- sum(cm) - tp - fn - fp
+  tibble(rater = r, PAI = 1:5, sensitivity = tp / (tp + fn), specificity = tn / (tn + fp))
+})
+per_class_table <- function(m)
+  per_class %>% select(rater, PAI, all_of(m)) %>%
+    pivot_wider(names_from = PAI, names_prefix = "PAI ", values_from = all_of(m)) %>%
+    knitr::kable(digits = 3, caption = paste("Per-class", m))
+per_class_table("sensitivity")
+per_class_table("specificity")
+```
+
+## 8. Cross-check against the Python script
+
+Compares with `evaluation/summary.csv` from `evaluate_batch_inference.py`. Point estimates must agree to the 4 decimals stored there. The image-level QWK interval limits differ slightly because R and numpy draw different resamples.
+
+```{r crosscheck}
+py_file <- file.path(res_dir, "evaluation", "summary.csv")
+if (file.exists(py_file)) {
+  py <- read_csv(py_file, show_col_types = FALSE) %>% filter(rater %in% raters)
+  q_img <- apply(boots$images["qwk", , ], 1, quantile, probs = c(.025, .975))
+  r_est <- as_tibble(t(est), rownames = "rater") %>% mutate(qwk_ci_low = q_img[1, rater], qwk_ci_high = q_img[2, rater])
+  diffs <- inner_join(r_est, py, by = "rater", suffix = c("_R", "_py")) %>%
+    transmute(rater, qwk = qwk_R - qwk_py, accuracy = accuracy_R - accuracy_py, mae = mae_R - mae_py,
+              within_1 = within_1_R - within_1_py, sensitivity = sensitivity - binary_sensitivity,
+              specificity = specificity - binary_specificity,
+              qwk_ci_low = qwk_ci_low_R - qwk_ci_low_py, qwk_ci_high = qwk_ci_high_R - qwk_ci_high_py)
+  stopifnot(nrow(diffs) == nrow(py), all(abs(select(diffs, qwk:specificity)) < 1e-4))
+  knitr::kable(diffs, digits = 5, caption = "R minus Python (point estimates agree; interval limits differ by resampling noise)")
+} else cat("No evaluation/summary.csv found - run evaluate_batch_inference.py first.")
+```
+
+## 9. Software
+
+```{r software}
+#| code-fold: true
+cat(R.version.string, "\n")
+c(tidyverse = "tidyverse", irr = "irr", knitr = "knitr") %>% map_chr(~ as.character(packageVersion(.x)))
+```

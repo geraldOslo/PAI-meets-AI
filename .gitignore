@@ -333,4 +333,5 @@ inference_results/
 .quarto/
 _freeze/
 *.rds
-code/analysis/*.html
+statistics/*.html
+statistics/*_files/

@@ -2,17 +2,19 @@
 title: "PAI Model Predictions Stability Analysis"
 author: "PAI-meets-AI Analysis"
 date: last-modified
-format: 
+editor: source
+format:
   html:
     toc: true
+    embed-resources: true
     code-fold: true
     theme: cosmo
     page-layout: full
 params:
-  # Placeholder: set to your repeated_run_YYYYMMDD_HHMMSS directory (relative to this
-  # file, or absolute), or override with:
+  # Leave empty to use the newest ../inference_results/repeated_run_* folder, or set it
+  # (relative to this file, or absolute) with:
   #   quarto render analyze_repeated_inference.qmd -P data_dir:/path/to/repeated_run_YYYYMMDD_HHMMSS
-  data_dir: "../../inference_results/repeated_run_YYYYMMDD_HHMMSS"
+  data_dir: ""
 ---
 
 ```{r setup, include=FALSE}
@@ -21,20 +23,30 @@ library(tidyverse)
 library(irr)
 library(knitr)
 library(kableExtra)
+
+if (!exists("params")) params <- rmarkdown::yaml_front_matter("analyze_repeated_inference.qmd")$params  # chunks run interactively
+
+# Resolve the data folder; stop here rather than render an empty report
+data_dir <- if (nzchar(params$data_dir)) params$data_dir else
+  tail(sort(Sys.glob("../inference_results/repeated_run_*")), 1)
+if (length(data_dir) == 0 || !dir.exists(file.path(data_dir, "run_1")))
+  stop("No repeated-run data found (expected <data_dir>/run_1, run_2, run_3). ",
+       "Set data_dir in the YAML header, or render with -P data_dir:/path/to/repeated_run_YYYYMMDD_HHMMSS",
+       call. = FALSE)
 ```
 
 # Introduction
 
 This report analyzes the stability of model predictions across **3 repeated inference runs**. The goal is to verify if the models produce deterministic results given the same input weights and data.
 
-**Target Directory:** `r params$data_dir`
+**Target Directory:** `r normalizePath(data_dir, winslash = "/")`
 
 ## Methodology
 
-*   **Performance Stability**: QWK vs Ground Truth for each run.
-*   **Intra-Run Consistency**: Pairwise QWK between predictions of different runs.
-*   **Probability Drift**: Analysis of variance in the soft-max probability outputs.
-*   **Ensemble Model**: Averaging probabilities of ResNet50, EfficientNet-B3, and ConvNeXt-Tiny.
+- **Performance Stability**: QWK vs Ground Truth for each run.
+- **Intra-Run Consistency**: Pairwise QWK between predictions of different runs.
+- **Probability Drift**: Analysis of variance in the soft-max probability outputs.
+- **Ensemble Model**: Averaging probabilities of ResNet50, EfficientNet-B3, and ConvNeXt-Tiny.
 
 ```{r helpers}
 #| code-summary: "Helper Functions"
@@ -82,8 +94,9 @@ load_model_data <- function(model_name, data_dir) {
       df <- df %>% select(original_index, filename, root_dir, true_pai, predicted_pai, starts_with("prob_pai"))
     } else {
       # Fallback for old files (though strongly recommend running inference again)
-      df <- df %>% select(filename, root_dir, true_pai, predicted_pai, starts_with("prob_pai"))
-      df$original_index <- 1:nrow(df)
+      # (original_index = row number, placed first so only the per-run columns are renamed below)
+      df <- df %>% mutate(original_index = row_number()) %>%
+        select(original_index, filename, root_dir, true_pai, predicted_pai, starts_with("prob_pai"))
     }
     
     # Rename columns that vary per run
@@ -177,13 +190,12 @@ analyze_dataframe <- function(df, title_prefix="") {
 
 # Analysis Results
 
-::: {.panel-tabset}
-
+::: panel-tabset
 ## ResNet50
 
 ```{r run_resnet, results='asis'}
 model_name <- "resnet50"
-df_rn <- load_model_data(model_name, params$data_dir)
+df_rn <- load_model_data(model_name, data_dir)
 if(is.null(df_rn)) {
   cat("**Error**: Could not load data for ResNet50.")
 } else {
@@ -196,7 +208,7 @@ if(is.null(df_rn)) {
 
 ```{r run_effnet, results='asis'}
 model_name <- "efficientnet_b3"
-df_eff <- load_model_data(model_name, params$data_dir)
+df_eff <- load_model_data(model_name, data_dir)
 if(is.null(df_eff)) {
   cat("**Error**: Could not load data for EfficientNet.")
 } else {
@@ -209,7 +221,7 @@ if(is.null(df_eff)) {
 
 ```{r run_conv, results='asis'}
 model_name <- "convnext_tiny"
-df_conv <- load_model_data(model_name, params$data_dir)
+df_conv <- load_model_data(model_name, data_dir)
 if(is.null(df_conv)) {
   cat("**Error**: Could not load data for ConvNeXt.")
 } else {
@@ -245,7 +257,7 @@ if(exists("df_rn") && !is.null(df_rn) &&
       colnames(avg_probs) <- colnames(cols_rn) # Keep column names
       
       # Determine Max Probability Class (1-5)
-      pred_class <- max.col(avg_probs)
+      pred_class <- max.col(avg_probs, ties.method = "first")   # default "random" would add fake instability
       
       # Add to Ensemble DF
       df_ens[[paste0("predicted_pai_r", r)]] <- pred_class
@@ -259,7 +271,6 @@ if(exists("df_rn") && !is.null(df_rn) &&
    cat("**Error**: Cannot calculate ensemble. Ensure all 3 individual models loaded successfully.")
 }
 ```
-
 :::
 
 # Summary Report
@@ -314,9 +325,26 @@ if(exists("df_rn") && exists("df_eff") && exists("df_conv") && exists("df_ens"))
   cat(sprintf("%-20s: %.4f\n", "ConvNeXt-Tiny", repro_conv))
   cat(sprintf("%-20s: %.4f (Ensemble)\n\n", "Ensemble Model", repro_ens))
   
-  cat("CONCLUSION:\n")
-  cat("All models demonstrate high stability. The Ensemble model provides\n")
-  cat("the most robust performance by averaging soft-max probabilities across architectures.\n")
+  # Conclusion computed from the results, not a fixed statement
+  same_pred <- function(df) mean(df$predicted_pai_r1 == df$predicted_pai_r2 & df$predicted_pai_r2 == df$predicted_pai_r3)
+  max_drift <- function(df) {
+    p <- function(r) as.matrix(select(df, starts_with("prob_pai_") & ends_with(paste0("_r", r))))
+    max(abs(p(1) - p(2)), abs(p(2) - p(3)), abs(p(1) - p(3)))
+  }
+  all_df <- list(ResNet50 = df_rn, `EfficientNet-B3` = df_eff, `ConvNeXt-Tiny` = df_conv, Ensemble = df_ens)
+  same   <- sapply(all_df, same_pred)
+  perf   <- c(ResNet50 = perf_rn, `EfficientNet-B3` = perf_eff, `ConvNeXt-Tiny` = perf_conv)
+
+  cat("CONCLUSION (computed from the results above):\n")
+  if (all(same == 1)) {
+    cat(sprintf("Predicted PAI identical in all 3 runs for every model; largest probability difference %.2g.\n",
+                max(sapply(all_df, max_drift))))
+  } else {
+    changed <- same[same < 1]
+    cat("Predicted PAI changed between runs for:",
+        paste(sprintf("%s (%.2f%% of images)", names(changed), 100 * (1 - changed)), collapse = ", "), "\n")
+  }
+  cat(sprintf("Ensemble mean QWK %.4f vs best single model (%s) %.4f.\n", perf_ens, names(which.max(perf)), max(perf)))
   cat("================================================================================\n")
   cat("```\n")
 }
