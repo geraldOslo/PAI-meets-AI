@@ -615,7 +615,16 @@ def main():
             # --- Run Inference and Save Predictions CSV ---
             print("\nRunning inference...")
             predictions_df = run_batch_inference(model, test_loader, device)
-            predictions_df = pd.merge(predictions_df, test_data[['filename', 'root_dir']], on='filename')
+            
+            # CRITICAL FIX: Assign root_dir by index instead of merging on filename
+            predictions_df['root_dir'] = test_dataset.data['root_dir'].values
+            
+            # Add explicit index for robust matching in analysis (Run 1 vs Run 2)
+            predictions_df['original_index'] = predictions_df.index
+            
+            # Sanity check
+            if not all(predictions_df['filename'] == test_dataset.data['filename']):
+                print("WARNING: Mismatch in filenames between predictions and dataset! Check shuffling.")
             
             predictions_csv_path = model_output_dir / "predictions.csv"
             predictions_df.to_csv(predictions_csv_path, index=False)
