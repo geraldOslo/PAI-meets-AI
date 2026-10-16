@@ -48,6 +48,8 @@ All models use ImageNet pretraining and are optimized for A100 40GB GPUs.
 - ✅ **Comprehensive result tracking** (CSV with all metrics + hyperparameters)
 - ✅ **Class imbalance handling** (weighted sampling, focal loss)
 - ✅ **Model interpretability** (GradCAM++ visualization)
+- ✅ **Standalone batch inference** on external datasets (all three models, no config needed)
+- ✅ **Prediction stability analysis** (repeated inference runs, R/Quarto)
 - ✅ **HPC ready** (Slurm scripts for cluster training)
 - ✅ **Automated normalization** and data preprocessing
 - ✅ **Early stopping** with configurable patience
@@ -68,7 +70,7 @@ All models use ImageNet pretraining and are optimized for A100 40GB GPUs.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/PAI-meets-AI.git
+git clone https://github.com/geraldOslo/PAI-meets-AI.git
 cd PAI-meets-AI
 
 # Create virtual environment
@@ -172,20 +174,24 @@ PAI-meets-AI/
 │   │   └── visualization_utils.py   # Plotting
 │   │
 │   ├── data_utils/
-│   │   ├── calculate_dataset_statistics.py  # ⚠️ Run this first!
+│   │   └── calculate_dataset_statistics.py  # ⚠️ Run this first!
 │   │
 │   ├── test_inference/
 │   │   ├── inference_gradcam.py              # Batch inference + GradCAM
+│   │   ├── PAI_batch_inference.py            # Standalone inference on external data
 │   │   ├── multilayer_xai_analysis.py        # Multi-layer XAI
 │   │   └── PAI_inference.py                  # Interactive GUI
 │   │
+│   ├── analysis/
+│   │   ├── analyze_repeated_inference.R      # Stability of repeated runs (text report)
+│   │   └── analyze_repeated_inference.qmd    # Stability of repeated runs (Quarto/HTML)
+│   │
 │   ├── utils/
-│   │   ├── diagnose_logs.py                  # Debug log parsing
 │   │   └── run_single_inference.py
 │   │
 │   └── slurm_scripts/
 │       ├── run_summary.sh                    # Slurm job for summarization
-│       ├── slurm_inference_*.sh              # Inference jobs
+│       ├── slurm_inference_*.sh              # Inference jobs (incl. repeated runs)
 │       └── logs/                             # Auto-generated job logs
 │
 ├── experiments/
@@ -198,7 +204,7 @@ PAI-meets-AI/
 │   │
 │   └── hyperparam_search/
 │       └── hyperparameter_summary_*.csv      # Aggregated results from all phases
-└── readme.md                                 # This file
+└── README.md                                 # This file
 ```
 
 ### Key Design Patterns
@@ -272,12 +278,59 @@ python code/summarize_and_infer.py --debug
 sbatch code/slurm_scripts/run_summary.sh
 ```
 
+### Inference on an External Dataset
+
+`code/test_inference/PAI_batch_inference.py` runs all three trained models (EfficientNet-B3, ResNet50, ConvNeXt-Tiny) on a folder of pre-cropped image clips. It has no GUI and does not use `config.py`.
+
+Expected dataset layout:
+
+```
+<DATA_DIR>/
+├── data.csv          # columns: filename (or image_path), PAI (1-5)
+├── image1.jpg
+├── image2.tiff
+└── ...
+```
+
+Rows with `PAI = NS` are skipped. Edit the constants in the `CONFIGURATION` section at the top of the script (`DATA_DIR`, `OUTPUT_DIR` and one checkpoint path per model, or `None` to skip a model), then run:
+
+```bash
+python code/test_inference/PAI_batch_inference.py
+```
+
+Architecture and normalization values are read from the checkpoint when stored there; older checkpoints fall back to the file name (it must contain `resnet`, `efficientnet` or `convnext`).
+
+Output is written to `OUTPUT_DIR/<model_name>/`:
+- `predictions.csv` - per-image predictions and class probabilities
+- `metrics_report.txt` - accuracy, QWK, confusion matrix and per-class metrics
+
+A combined summary across all models is written to `OUTPUT_DIR/summary.csv`.
+
+### Prediction Stability (Repeated Inference)
+
+To check that predictions are reproducible, `code/slurm_scripts/slurm_inference_repeated.sh` runs inference three times for each architecture and writes the runs to `inference_results/repeated_run_YYYYMMDD_HHMMSS/run_{1,2,3}/`. Submit it from the project root, with the checkpoints in `model_checkpoints/`:
+
+```bash
+sbatch code/slurm_scripts/slurm_inference_repeated.sh
+```
+
+Analyze the runs (QWK per run, pairwise agreement between runs, probability drift) with R:
+
+```bash
+# Text report, written to the run directory
+Rscript code/analysis/analyze_repeated_inference.R --dir inference_results/repeated_run_YYYYMMDD_HHMMSS
+
+# HTML report (Quarto), which also includes an ensemble of the three models.
+# Paths are resolved relative to code/analysis/, so use an absolute path or ../../
+quarto render code/analysis/analyze_repeated_inference.qmd \
+    -P data_dir:../../inference_results/repeated_run_YYYYMMDD_HHMMSS
+```
+
+Required R packages: `tidyverse`, `irr` and `optparse` for the script; `tidyverse`, `irr`, `knitr` and `kableExtra` for the Quarto report.
+
 ### Diagnostics
 
 ```bash
-# Diagnose log parsing issues
-python code/utils/diagnose_logs.py experiments/
-
 # Test single image inference
 python code/utils/run_single_inference.py
 ```
@@ -310,7 +363,7 @@ python code/utils/run_single_inference.py
   year = {2025},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{https://github.com/yourusername/PAI-meets-AI}},
+  howpublished = {\url{https://github.com/geraldOslo/PAI-meets-AI}},
   institution = {University of Oslo, Faculty of Dentistry}
 }
 ```

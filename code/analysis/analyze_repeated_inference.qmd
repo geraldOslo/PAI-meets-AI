@@ -9,7 +9,10 @@ format:
     theme: cosmo
     page-layout: full
 params:
-  data_dir: "../../inference_results/repeated_run_20260121_090519"
+  # Placeholder: set to your repeated_run_YYYYMMDD_HHMMSS directory (relative to this
+  # file, or absolute), or override with:
+  #   quarto render analyze_repeated_inference.qmd -P data_dir:/path/to/repeated_run_YYYYMMDD_HHMMSS
+  data_dir: "../../inference_results/repeated_run_YYYYMMDD_HHMMSS"
 ---
 
 ```{r setup, include=FALSE}
